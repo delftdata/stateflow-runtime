@@ -2,6 +2,7 @@
 
 set -m
 
-python networking-service/tcp-server.py &
 
-fg %1
+exec python networking-service/tcp-server.py &
+
+exec python universalis_operator/operator_server.py

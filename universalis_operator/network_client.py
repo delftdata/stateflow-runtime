@@ -10,18 +10,9 @@ class NetworkTCPClient:
         self.networking_process_address = '0.0.0.0'
         self.networking_process_port = 8888
 
-    def transmit_tcp_request_response(self, message: object) -> object:
-        try:
-            with socket(AF_INET, SOCK_STREAM) as s:
-                s.connect((self.networking_process_address, self.networking_process_port))
-                s.setblocking(False)
-                logging.debug(f"REQ RESP Target machine: "
-                              f"{self.networking_process_address}:{self.networking_process_port} message: {message}")
-                s.sendall(self.msgpack_serialization({"__COM_TYPE__": "REQ_RESP", "__MSG__": message}))
-                return self.msgpack_deserialization(self.receive_entire_message_from_socket(s))
-        except ConnectionRefusedError:
-            logging.error(f"Failed to connect to server "
-                          f"{self.networking_process_address}:{self.networking_process_port}")
+    def send_request_to_other_operator(self, operator_name: str, function_name: str, params):
+        payload = {'__OP_NAME__': operator_name, '__FUN_NAME__': function_name, '__PARAMS__': params}
+        self.transmit_tcp_no_response(payload, 'REMOTE_FUN_CALL')
 
     def transmit_tcp_no_response(self, message: object, com_type: str = "NO_RESP") -> None:
         try:
@@ -29,15 +20,24 @@ class NetworkTCPClient:
                 s.connect((self.networking_process_address, self.networking_process_port))
                 s.setblocking(False)
                 if com_type == "NO_RESP":
-                    logging.debug(f"NO RESP Target machine: "
-                                  f"{self.networking_process_address}:{self.networking_process_port} message: {message}")
                     s.sendall(self.msgpack_serialization({"__COM_TYPE__": "NO_RESP", "__MSG__": message}))
-                elif com_type == "GET_PEERS":
-                    s.sendall(self.msgpack_serialization({"__COM_TYPE__": "GET_PEERS", "__MSG__": message}))
+                elif com_type == "REMOTE_FUN_CALL":
+                    s.sendall(self.msgpack_serialization({"__COM_TYPE__": "REMOTE_FUN_CALL", "__MSG__": message}))
                 else:
                     logging.error(f"Invalid communication type: {com_type}")
         except ConnectionRefusedError:
             logging.error(f"Failed to connect to server: "
+                          f"{self.networking_process_address}:{self.networking_process_port}")
+
+    def transmit_tcp_request_response(self, message: object) -> object:
+        try:
+            with socket(AF_INET, SOCK_STREAM) as s:
+                s.connect((self.networking_process_address, self.networking_process_port))
+                s.setblocking(False)
+                s.sendall(self.msgpack_serialization({"__COM_TYPE__": "REQ_RESP", "__MSG__": message}))
+                return self.msgpack_deserialization(self.receive_entire_message_from_socket(s))
+        except ConnectionRefusedError:
+            logging.error(f"Failed to connect to server "
                           f"{self.networking_process_address}:{self.networking_process_port}")
 
     def receive_entire_message_from_socket(self, s: socket) -> bytes:

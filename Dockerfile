@@ -11,6 +11,7 @@ RUN pip3 install --upgrade pip \
 WORKDIR /usr/local/universalis
 
 COPY --chown=universalis networking-service networking-service
+COPY --chown=universalis universalis_operator universalis_operator
 
 COPY docker-command.sh /usr/local/bin/
 RUN chmod a+x /usr/local/bin/docker-command.sh
