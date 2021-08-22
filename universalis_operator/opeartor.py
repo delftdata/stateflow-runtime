@@ -1,12 +1,17 @@
-from typing import Union
+from abc import ABC, abstractmethod
+from typing import Union, Callable
 from uuid import uuid4
 from timeit import default_timer as timer
 
-
-from state import OperatorState
+from .network_client import NetworkTCPClient
+from .state import OperatorState
 
 
 class StateNotAttachedError(Exception):
+    pass
+
+
+class NotAFunctionError(Exception):
     pass
 
 
@@ -23,29 +28,31 @@ class Function:
         raise NotImplementedError
 
 
-class StatefulFunction:
+class StatefulFunction(ABC):
 
     state: OperatorState
 
-    def __init__(self, python_function):
-        self.name = python_function.__name__
-        self.__run = python_function
+    def __init__(self):
+        self.name = type(self).__name__
+        self.networking = NetworkTCPClient()
 
     def __call__(self, *args, **kwargs):
         if self.state is None:
             raise StateNotAttachedError('Cannot call stateful function without attached state')
-        return self.__run(self, *args)
+        return self.run(self, args)
 
     def attach_state(self, operator_state: OperatorState):
         self.state = operator_state
 
-    def __run(self):
+    @abstractmethod
+    def run(self, *args):
         raise NotImplementedError
 
 
 class Operator:
     # each operator is a coroutine? and a server. Client is already implemented in the networking module
-    def __init__(self):
+    def __init__(self, name: str):
+        self.name = name
         self.state: OperatorState = OperatorState()
         self.functions: dict[str, Union[Function, StatefulFunction]] = {}
         self.dns = {}  # where the other functions exist
@@ -53,9 +60,16 @@ class Operator:
     def register_function(self, function: Function):
         self.functions[function.name] = function
 
-    def register_stateful_function(self, stateful_function: StatefulFunction):
+    def register_stateful_function(self, function: StatefulFunction):
+        if StatefulFunction not in type(function).__bases__:
+            raise NotAFunctionError
+        stateful_function = function
         self.functions[stateful_function.name] = stateful_function
         self.functions[stateful_function.name].attach_state(self.state)
+
+    def register_stateful_functions(self, *functions: StatefulFunction):
+        for function in functions:
+            self.register_stateful_function(function)
 
     def call_remote_function(self):
         pass

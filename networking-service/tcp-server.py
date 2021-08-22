@@ -5,7 +5,7 @@ import logging
 
 from utils import msgpack_deserialization, msgpack_serialization, benchmark_peers, transmit_tcp_no_response
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 OWN_ADDRESS_NAME = os.getenv('OWN_ADDRESS_NAME')
 OWN_PORT = os.getenv('OWN_PORT')
@@ -61,7 +61,7 @@ class WorkerNetworkProtocol(asyncio.Protocol):
                 logging.debug(f"INVOKE_LOCAL: {message}")
                 transmit_tcp_no_response('0.0.0.0', OPERATOR_SERVER_PORT, message, com_type='RUN_FUN')
             else:
-                logging.error(f"Non supported message type: {message_type}")
+                logging.error(f"TCP SERVER: Non supported message type: {message_type}")
         self.transport.close()
 
 

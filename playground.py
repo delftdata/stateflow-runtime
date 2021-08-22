@@ -67,24 +67,114 @@
 # if __name__ == '__main__':
 #     print_parameters(1, 2, 3)
 
-class B(object):
-    def __call__(self):
-        return self.call_method(self)
+# class B(object):
+#     def __call__(self):
+#         return self.call_method(self)
+#
+#     @staticmethod
+#     def call_method(self):
+#         return 1
+#
+#
+# def new_call(self):
+#     return 42
+#
+#
+# # Create two instances for testing.
+# b1 = B()
+# b2 = B()
+# b2.call_method = new_call  # Will only affect this instance.
+#
+# print(b1())  # -> 1
+# print(b2())  # -> 42
 
-    @staticmethod
-    def call_method(self):
-        return 1
+# n1 = 'name1'
+# n2 = 'name2'
+#
+# d = {}
+#
+# d[frozenset({n1, n2})] = 'test'
+#
+# print(d)
+#
+# print(frozenset({n1, n2}) == frozenset({n2, n1}))
+# print((n1, n2) == (n2, n1))
 
 
-def new_call(self):
-    return 42
+# from abc import ABC, abstractmethod
+# from timeit import default_timer as timer
+# from universalis_operator.opeartor import StateNotAttachedError
+# from universalis_operator.state import OperatorState
+#
+#
+# class StatefulFunction(ABC):
+#
+#     state: OperatorState
+#
+#     def __init__(self):
+#         self.state = OperatorState()
+#         self.name = type(self).__name__
+#
+#     def __call__(self, *args, **kwargs):
+#         if self.state is None:
+#             raise StateNotAttachedError('Cannot call stateful function without attached state')
+#         return self.run(self, args)
+#
+#     def attach_state(self, operator_state: OperatorState):
+#         self.state = operator_state
+#
+#     @abstractmethod
+#     def run(self, *args):
+#         raise NotImplementedError
+#
+#
+# class CreateOrder(StatefulFunction):
+#     def run(self, key, user_key):
+#         self.state.create(key, {'user_key': user_key, 'items': []})
+#         return key
+#
+#
+# t1 = timer()
+# co = CreateOrder()
+# t2 = timer()
+# co(1, 'asterios')
+# t3 = timer()
+# print(f'Instantiation took {(t2 - t1) * 1e6} us')
+# print(f'Running took {(t3 - t2) * 1e6} us')
+# print(co.name)
+# from abc import ABC
+#
+#
+# class A(ABC):
+#
+#     def __init__(self):
+#         self.name = type(self).__name__
+#
+#
+# class B(A):
+#     pass
+#
+#
+# def check(stuff):
+#     for base in stuff.__class__.__bases__:
+#         print(base.__name__)
+#
+#     print(A in type(stuff).__bases__)
+#
+#
+# b = B()
+#
+# check(b)
+#
+# print(b.name)
 
+workers = [1, 2, 3]
 
-# Create two instances for testing.
-b1 = B()
-b2 = B()
-b2.call_method = new_call  # Will only affect this instance.
+print(workers)
 
-print(b1())  # -> 1
-print(b2())  # -> 42
+current_worker = workers.pop(0)
+print('Current worker', current_worker)
+print(workers)
 
+workers.append(current_worker)
+print(workers)

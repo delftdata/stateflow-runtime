@@ -1,6 +1,13 @@
 version: "3"
 services:
 
+  coordinator:
+    build:
+      context: .
+    image: dev/universalis-coordinator:latest
+    ports:
+      - "8886:8888"
+
   worker-0:
     build:
       context: .
@@ -10,7 +17,7 @@ services:
       - OWN_ADDRESS_NAME=worker-0
       - OWN_PORT=8887
     ports:
-      - 8887:8888
+      - "8887:8888"
 
   worker-1:
     build:
@@ -21,7 +28,7 @@ services:
       - OWN_ADDRESS_NAME=worker-1
       - OWN_PORT=8888
     ports:
-      - 8888:8888
+      - "8888:8888"
 
   worker-2:
     build:
@@ -32,15 +39,4 @@ services:
       - OWN_ADDRESS_NAME=worker-2
       - OWN_PORT=8889
     ports:
-      - 8889:8888
-
-  worker-3:
-    build:
-      context: .
-    image: dev/universalis:latest
-    environment:
-      - PYTHONUNBUFFERED=1
-      - OWN_ADDRESS_NAME=worker-2
-      - OWN_PORT=8889
-    ports:
-      - 8886:8888
+      - "8889:8888"

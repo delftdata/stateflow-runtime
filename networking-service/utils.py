@@ -49,6 +49,10 @@ def transmit_tcp_no_response(host: str, port: int, message: object, com_type: st
                 s.sendall(msgpack_serialization({"__COM_TYPE__": "NO_RESP", "__MSG__": message}))
             elif com_type == "GET_PEERS":
                 s.sendall(msgpack_serialization({"__COM_TYPE__": "GET_PEERS", "__MSG__": message}))
+            elif com_type == "INVOKE_LOCAL":
+                s.sendall(msgpack_serialization({"__COM_TYPE__": "INVOKE_LOCAL", "__MSG__": message}))
+            elif com_type == "RUN_FUN":
+                s.sendall(msgpack_serialization({"__COM_TYPE__": "RUN_FUN", "__MSG__": message}))
             elif com_type == "SC1":
                 s.sendall(msgpack_serialization({"__COM_TYPE__": "SC1", "__MSG__": message}))
             else:
