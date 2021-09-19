@@ -1,4 +1,4 @@
-from universalis_operator.opeartor import StatefulFunction
+from common.opeartor import StatefulFunction
 
 
 class CreateOrder(StatefulFunction):
@@ -20,9 +20,9 @@ class Checkout(StatefulFunction):
         total_cost = 0
         for item in order_data['items']:
             # call stock operator here to subtract stock
-            self.networking.send_request_to_other_operator('stock', 'subtract_stock', {'item_key': item['item_key'],
-                                                                                       'quantity': item['quantity']})
+            self.networking.send_request_to_other_operator('stock', 'SubtractStock', {'item_key': item['item_key'],
+                                                                                      'quantity': item['quantity']})
             total_cost += item['quantity'] * item['cost']
         # call user operator to subtract credit
-        self.networking.send_request_to_other_operator('user', 'subtract_credit', {'user_key': order_data['user_key'],
-                                                                                   'credit': total_cost})
+        self.networking.send_request_to_other_operator('user', 'SubtractCredit', {'user_key': order_data['user_key'],
+                                                                                  'credit': total_cost})

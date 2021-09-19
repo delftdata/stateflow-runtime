@@ -1,0 +1,4 @@
+# networking service
+uvloop==0.16.0
+msgpack==1.0.2
+cloudpickle==2.0.0

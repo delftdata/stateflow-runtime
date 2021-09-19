@@ -1,14 +1,20 @@
-import logging
 import msgpack
+import cloudpickle
+
 from socket import socket, AF_INET, SOCK_STREAM
+
+from common.logging import logging
 
 
 class NetworkTCPClient:
 
-    def __init__(self, buffer_size: int = 4096):
+    def __init__(self,
+                 networking_process_address: str = '0.0.0.0',
+                 networking_process_port: int = 8888,
+                 buffer_size: int = 4096):
         self.buffer_size = buffer_size
-        self.networking_process_address = '0.0.0.0'
-        self.networking_process_port = 8888
+        self.networking_process_address = networking_process_address
+        self.networking_process_port = networking_process_port
 
     def send_request_to_other_operator(self, operator_name: str, function_name: str, params):
         payload = {'__OP_NAME__': operator_name, '__FUN_NAME__': function_name, '__PARAMS__': params}
@@ -23,6 +29,12 @@ class NetworkTCPClient:
                     s.sendall(self.msgpack_serialization({"__COM_TYPE__": "NO_RESP", "__MSG__": message}))
                 elif com_type == "REMOTE_FUN_CALL":
                     s.sendall(self.msgpack_serialization({"__COM_TYPE__": "REMOTE_FUN_CALL", "__MSG__": message}))
+                elif com_type == "SCHEDULE_OPERATOR":
+                    s.sendall(cloudpickle.dumps({"__COM_TYPE__": "SCHEDULE_OPERATOR", "__MSG__": message}))
+                elif com_type == "REGISTER_OPERATOR_INGRESS":
+                    s.sendall(cloudpickle.dumps({"__COM_TYPE__": "REGISTER_OPERATOR_INGRESS", "__MSG__": message}))
+                elif com_type == 'RUN_FUN':
+                    s.sendall(cloudpickle.dumps({"__COM_TYPE__": "RUN_FUN", "__MSG__": message}))
                 else:
                     logging.error(f"Invalid communication type: {com_type}")
         except ConnectionRefusedError:

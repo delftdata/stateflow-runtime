@@ -1,20 +1,12 @@
 import asyncio
-
-import msgpack
-import logging
 from socket import socket, AF_INET, SOCK_STREAM
-from timeit import default_timer as timer
 
+import cloudpickle
+
+from common.logging import logging
+from common.serialization import msgpack_serialization, msgpack_deserialization
 
 BUFFER_SIZE = 4096  # in bytes
-
-
-def msgpack_serialization(serializable_object: object) -> bytes:
-    return msgpack.packb(serializable_object)
-
-
-def msgpack_deserialization(serialized_object: bytes) -> dict:
-    return msgpack.unpackb(serialized_object)
 
 
 def receive_entire_message_from_socket(s: socket) -> bytes:
@@ -52,9 +44,14 @@ def transmit_tcp_no_response(host: str, port: int, message: object, com_type: st
             elif com_type == "INVOKE_LOCAL":
                 s.sendall(msgpack_serialization({"__COM_TYPE__": "INVOKE_LOCAL", "__MSG__": message}))
             elif com_type == "RUN_FUN":
-                s.sendall(msgpack_serialization({"__COM_TYPE__": "RUN_FUN", "__MSG__": message}))
-            elif com_type == "SC1":
-                s.sendall(msgpack_serialization({"__COM_TYPE__": "SC1", "__MSG__": message}))
+                s.sendall(cloudpickle.dumps({"__COM_TYPE__": "RUN_FUN", "__MSG__": message}))
+            elif com_type == "RECEIVE_EXE_PLN":
+                message: bytes
+                s.sendall(cloudpickle.dumps({"__COM_TYPE__": "RECEIVE_EXE_PLN", "__MSG__": message}))
+            elif com_type == "REGISTER_OPERATOR_INGRESS":
+                s.sendall(msgpack_serialization({"__COM_TYPE__": "REGISTER_OPERATOR_INGRESS", "__MSG__": message}))
+            elif com_type == "REGISTER_OPERATOR":
+                s.sendall(cloudpickle.dumps({"__COM_TYPE__": "REGISTER_OPERATOR", "__MSG__": message}))
             else:
                 logging.error(f"Invalid communication type: {com_type}")
     except ConnectionRefusedError:
@@ -81,43 +78,3 @@ async def async_transmit_tcp_request_response(host: str, port: int, message: obj
     data = await reader.read()
     writer.close()
     return msgpack_deserialization(data)
-
-
-async def benchmark_peers(peers: list[tuple[str, int]]):
-
-    msg = {"1": [1, 2, 3], "2": [4, 5, 6], "3": [7, 8, 9], "4": [1, 2, 3], "5": [4, 5, 6], "6": [7, 8, 9],
-           "7": [1, 2, 3], "8": [4, 5, 6], "9": [7, 8, 9]}
-
-    n_runs = 10000
-
-    for host, port in peers:
-
-        logging.info(f"------------- RUN AGAINST {host}:{port} -------------")
-        logging.info("STARTING ONE WAY COMMUNICATION TESTS")
-
-        total_runtime = 0
-        for _ in range(n_runs):
-            start = timer()
-            await async_transmit_tcp_no_response(host, port, msg)
-            end = timer()
-            runtime = end - start
-            total_runtime += runtime
-
-        avg_runtime = total_runtime / n_runs
-        logging.info(f"No Response total runtime on {n_runs} runs is {total_runtime} seconds")
-        logging.info("No Response: %.3f ms on average" % (1000 * avg_runtime))
-
-        logging.info("STARTING REQUEST/RESPONSE COMMUNICATION TESTS")
-
-        total_runtime = 0
-        for _ in range(n_runs):
-            start = timer()
-            await async_transmit_tcp_request_response(host, port, msg)
-            end = timer()
-            runtime = end - start
-            total_runtime += runtime
-
-        avg_runtime = total_runtime / n_runs
-
-        logging.info(f"Request/Response total runtime on {n_runs} runs is {total_runtime} seconds")
-        logging.info("Request/Response: %.3f ms on average" % (1000 * avg_runtime))

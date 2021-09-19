@@ -1,4 +1,4 @@
-from universalis_operator.opeartor import Operator
+from common.opeartor import Operator
 
 
 class StateflowGraph:

@@ -1,6 +1,7 @@
 from coordinator.scheduler.round_robin import RoundRobin
-from coordinator.stateflow_graph import StateflowGraph
-from coordinator.worker import StateflowWorker
+from common.stateflow_graph import StateflowGraph
+from common.stateflow_worker import StateflowWorker
+from common.stateflow_ingress import StateflowIngress
 
 
 class NotAStateflowGraph(Exception):
@@ -9,18 +10,15 @@ class NotAStateflowGraph(Exception):
 
 class Coordinator:
 
-    def __init__(self, host: str, port: int):
-        self.own_host = host
-        self.own_port = port
+    def __init__(self):
+        # TODO get workers and ingresses dynamically
         self.workers = [StateflowWorker("worker-0", 8888),
                         StateflowWorker("worker-1", 8888),
                         StateflowWorker("worker-2", 8888)]
-        self.operators = {}
-        self.source = None
-        self.sink = None
+        self.ingresses = [StateflowIngress("ingress-0", 8888, '0.0.0.0', 8885)]
 
     def submit_stateflow_graph(self, stateflow_graph: StateflowGraph, scheduler_type=None):
         if not isinstance(stateflow_graph, StateflowGraph):
             raise NotAStateflowGraph
         scheduler = RoundRobin()
-        scheduler.schedule(self.workers, stateflow_graph)
+        return scheduler.schedule(self.workers, self.ingresses, stateflow_graph)

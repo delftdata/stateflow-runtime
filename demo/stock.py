@@ -1,4 +1,4 @@
-from universalis_operator.opeartor import StatefulFunction
+from common.opeartor import StatefulFunction
 
 
 class CreateItem(StatefulFunction):

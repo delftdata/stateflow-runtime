@@ -1,6 +1,14 @@
 version: "3"
 services:
 
+  ingress-0:
+    build:
+      context: .
+      dockerfile: ingress.Dockerfile
+    image: dev/universalis-ingress:latest
+    ports:
+      - "8885:8888"
+
   coordinator:
     build:
       context: .

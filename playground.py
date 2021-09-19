@@ -167,14 +167,112 @@
 # check(b)
 #
 # print(b.name)
+#
+# workers = [1, 2, 3]
+# #      1       2      3      1      2      3
+# op = ['op1', 'op2', 'op3', 'op4', 'op5', 'op6']
+#
+# le = len(workers)
+#
+# print(le)
+# print(len(op))
+# print(list(range(le)))
+#
+# print(workers[list(range(le))[3 % le]])
+#
+#
+# c = [1, 2]
+# d = {1: 't1', 2: 't2'}
+#
+# print([d[element] for element in c])
 
-workers = [1, 2, 3]
+# import msgpack
+#
+#
+# class A:
+#     def __init__(self, d):
+#         self.d = d
+#
+#     def __eq__(self, other):
+#         return self.d == other.d
+#
+#
+# def a_serializer(obj):
+#     if isinstance(obj, A):
+#         return {'__A__': True, 'd': obj.d}
+#     return obj
+#
+#
+# def a_deserializer(obj):
+#     if '__A__' in obj:
+#         return A(obj['d'])
+#     return obj
+#
+#
+# a = A({'test': 1})
+#
+# packed = msgpack.packb(a, default=a_serializer)
+# unpacked = msgpack.unpackb(packed, object_hook=a_deserializer)
+# print(a.d)
+# print(unpacked.d)
+# print(a == unpacked)
+#
+# p = msgpack.packb(('1', '2', '3'))
+# print(msgpack.unpackb(p))
+# import cloudpickle
+# import sys
+# from timeit import default_timer as timer
+#
+# from universalis_operator.operator_server import msgpack_serialization
+#
+#
+# class A:
+#
+#     def __init__(self, a):
+#         self.a = a
+#
+#     def print_a(self):
+#         print(self.a)
+#
+#
+# start = timer()
+# pickled_a = cloudpickle.dumps(A)
+# mid = timer()
+# unpickled_a = cloudpickle.loads(pickled_a)
+# end = timer()
+# serlialized_message = msgpack_serialization({"__COM_TYPE__": "NO_RESP", "__MSG__": pickled_a})
+# end_msg = timer()
+# print(f'Serializing took {(mid - start) * 1000} ms')
+# print(f'Deserializing took {(end - mid) * 1000} ms')
+# print(f'Total took {(end - start) * 1000} ms')
+# print(f'Message took {(end_msg - end) * 1000} ms')
+# print(f'Payload size: {sys.getsizeof(pickled_a)} bytes')
+# print(f'Message size: {sys.getsizeof(serlialized_message)} bytes')
+#
+# a_inst: A = unpickled_a('test')
+#
+# a_inst.print_a()
+# print(a_inst)
+#
+# a_inst2: A = unpickled_a('test2')
+# a_inst2.print_a()
+# print(a_inst2)
 
-print(workers)
 
-current_worker = workers.pop(0)
-print('Current worker', current_worker)
-print(workers)
+from queue import PriorityQueue
+import time
 
-workers.append(current_worker)
-print(workers)
+q = PriorityQueue()
+
+
+q.put(time.time_ns())
+q.put(time.time_ns())
+q.put(time.time_ns())
+q.put(time.time_ns())
+q.put(time.time_ns())
+
+
+while not q.empty():
+    next_item = q.get()
+    print(next_item)
+
