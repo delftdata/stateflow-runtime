@@ -3,7 +3,7 @@ FROM python:3.9-slim
 RUN apt-get update &&\
     apt-get install git -y
 
-COPY requirements.txt /var/local/universalis/
+COPY coordinator/requirements.txt /var/local/universalis/
 
 RUN groupadd universalis \
     && useradd -m -d /usr/local/universalis -g universalis universalis
@@ -13,17 +13,15 @@ RUN pip3 install --upgrade pip \
 
 WORKDIR /usr/local/universalis
 
-COPY --chown=universalis networking-service networking-service
-COPY --chown=universalis worker worker
 COPY --chown=universalis coordinator coordinator
 COPY --chown=universalis common common
 
-COPY docker-command.sh /usr/local/bin/
-RUN chmod a+x /usr/local/bin/docker-command.sh
+COPY coordinator/start-coordinator.sh /usr/local/bin/
+RUN chmod a+x /usr/local/bin/start-coordinator.sh
 
 ENV PYTHONPATH /usr/local/universalis
 
 USER universalis
-CMD ["/usr/local/bin/docker-command.sh"]
+CMD ["/usr/local/bin/start-coordinator.sh"]
 
 EXPOSE 8888

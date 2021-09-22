@@ -1,4 +1,4 @@
-from common.opeartor import Operator
+from common.opeartor import BaseOperator
 
 
 class StateflowGraph:
@@ -8,10 +8,10 @@ class StateflowGraph:
         self.nodes = {}
         self.edges: dict[str, list[str]] = {}
 
-    def add_operator(self, operator: Operator):
+    def add_operator(self, operator: BaseOperator):
         self.nodes[operator.name] = operator
 
-    def add_connection(self, operator1: Operator, operator2: Operator, bidirectional: bool = False):
+    def add_connection(self, operator1: BaseOperator, operator2: BaseOperator, bidirectional: bool = False):
         self.__add_edge(operator1.name, operator2.name)
         if bidirectional:
             self.__add_edge(operator2.name, operator1.name)

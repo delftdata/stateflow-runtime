@@ -59,12 +59,23 @@ def transmit_tcp_no_response(host: str, port: int, message: object, com_type: st
 
 
 async def async_transmit_tcp_no_response(host: str, port: int, message: object, com_type: str = "NO_RESP") -> None:
-    reader, writer = await asyncio.open_connection(host, port)
+    _, writer = await asyncio.open_connection(host, port)
     if com_type == "NO_RESP":
-        logging.debug(f"Target machine: {host}:{port} message: {message}")
+        logging.debug(f"NO RESP Target machine: {host}:{port} message: {message}")
         writer.write(msgpack_serialization({"__COM_TYPE__": "NO_RESP", "__MSG__": message}))
     elif com_type == "GET_PEERS":
         writer.write(msgpack_serialization({"__COM_TYPE__": "GET_PEERS", "__MSG__": message}))
+    elif com_type == "INVOKE_LOCAL":
+        writer.write(msgpack_serialization({"__COM_TYPE__": "INVOKE_LOCAL", "__MSG__": message}))
+    elif com_type == "RUN_FUN":
+        writer.write(cloudpickle.dumps({"__COM_TYPE__": "RUN_FUN", "__MSG__": message}))
+    elif com_type == "RECEIVE_EXE_PLN":
+        message: bytes
+        writer.write(cloudpickle.dumps({"__COM_TYPE__": "RECEIVE_EXE_PLN", "__MSG__": message}))
+    elif com_type == "REGISTER_OPERATOR_INGRESS":
+        writer.write(msgpack_serialization({"__COM_TYPE__": "REGISTER_OPERATOR_INGRESS", "__MSG__": message}))
+    elif com_type == "REGISTER_OPERATOR":
+        writer.write(cloudpickle.dumps({"__COM_TYPE__": "REGISTER_OPERATOR", "__MSG__": message}))
     else:
         logging.error(f"Invalid communication type: {com_type}")
     await writer.drain()

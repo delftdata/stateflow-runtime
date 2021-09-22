@@ -6,7 +6,7 @@ from common.logging import logging
 from common.stateflow_graph import StateflowGraph
 from common.stateflow_worker import StateflowWorker
 from common.network_client import NetworkTCPClient
-from common.opeartor import Operator, StatefulFunction
+from common.opeartor import BaseOperator, StatefulFunction
 
 
 class NotAStateflowGraph(Exception):
@@ -26,23 +26,27 @@ class Universalis:
             raise NotAStateflowGraph
         for module in modules:
             cloudpickle.register_pickle_by_value(module)
-        self.ingress_that_serves = StateflowWorker(*asyncio.run(self.async_send_execution_graph(stateflow_graph)))
-        time.sleep(1)  # TODO remove the sleep
+        self.ingress_that_serves = StateflowWorker(*asyncio.run(self.send_execution_graph(stateflow_graph)))
         logging.info(f'Submission of Stateflow graph: {stateflow_graph.name} completed')
+        time.sleep(0.05)  # Sleep for 50ms to allow for the graph to setup
+        logging.info(f'Serving ingress: {self.ingress_that_serves}')
 
-    def send_tcp_event(self, operator: Operator, function: StatefulFunction, *params, timestamp: int = None):
-        ingress = NetworkTCPClient(self.ingress_that_serves.host, self.ingress_that_serves.port)
+    def send_tcp_event(self, operator: BaseOperator, function: StatefulFunction, *params, timestamp: int = None):
         if timestamp is None:
             timestamp = time.time_ns()
         event = {'__OP_NAME__': operator.name,
                  '__FUN_NAME__': function.name,
                  '__PARAMS__': params,
                  '__TIMESTAMP__': timestamp}
-        ingress.transmit_tcp_no_response(event, com_type='REMOTE_FUN_CALL')
+        ingress = NetworkTCPClient(self.ingress_that_serves.host, self.ingress_that_serves.port)
+        asyncio.run(ingress.async_transmit_tcp_no_response(event, com_type='REMOTE_FUN_CALL'))
 
-    async def async_send_execution_graph(self, stateflow_graph: StateflowGraph) -> object:
+    async def send_execution_graph(self, stateflow_graph: StateflowGraph) -> tuple:
         reader, writer = await asyncio.open_connection(self.coordinator_adr, self.coordinator_port)
-        writer.write(cloudpickle.dumps({"__COM_TYPE__": "SEND_EXECUTION_GRAPH", "__MSG__": stateflow_graph}))
-        data = await reader.read()
+        writer.write(cloudpickle.dumps({"__COM_TYPE__": "SEND_EXECUTION_GRAPH",
+                                        "__MSG__": stateflow_graph}))
+        await writer.drain()
+        writer.write_eof()
+        reply = await reader.read()
         writer.close()
-        return cloudpickle.loads(data)
+        return cloudpickle.loads(reply)

@@ -4,3 +4,5 @@ msgpack==1.0.2
 cloudpickle==2.0.0
 # monitoring service
 psutil==5.8.0
+# retrying
+tenacity==8.0.1

@@ -8,8 +8,8 @@ from common.stateflow_worker import StateflowWorker
 class BaseScheduler(ABC):
 
     @abstractmethod
-    def schedule(self,
-                 workers: list[StateflowWorker],
-                 ingresses: list[StateflowIngress],
-                 execution_graph: StateflowGraph):
+    async def schedule(self,
+                       workers: list[StateflowWorker],
+                       ingresses: list[StateflowIngress],
+                       execution_graph: StateflowGraph):
         raise NotImplementedError

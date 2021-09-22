@@ -4,7 +4,7 @@ services:
   ingress-0:
     build:
       context: .
-      dockerfile: ingress.Dockerfile
+      dockerfile: ingress/ingress.Dockerfile
     image: dev/universalis-ingress:latest
     ports:
       - "8885:8888"
@@ -12,6 +12,7 @@ services:
   coordinator:
     build:
       context: .
+      dockerfile: coordinator/coordinator.dockerfile
     image: dev/universalis-coordinator:latest
     ports:
       - "8886:8888"
@@ -19,6 +20,7 @@ services:
   worker-0:
     build:
       context: .
+      dockerfile: worker/worker.dockerfile
     image: dev/universalis:latest
     environment:
       - PYTHONUNBUFFERED=1
@@ -30,6 +32,7 @@ services:
   worker-1:
     build:
       context: .
+      dockerfile: worker/worker.dockerfile
     image: dev/universalis:latest
     environment:
       - PYTHONUNBUFFERED=1
@@ -41,6 +44,7 @@ services:
   worker-2:
     build:
       context: .
+      dockerfile: worker/worker.dockerfile
     image: dev/universalis:latest
     environment:
       - PYTHONUNBUFFERED=1
