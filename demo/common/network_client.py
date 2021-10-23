@@ -15,10 +15,16 @@ class NetworkTCPClient:
 
     async def async_transmit_tcp_no_response(self, message: object, com_type: str = "NO_RESP") -> None:
         _, writer = await asyncio.open_connection(self.networking_process_address, self.networking_process_port)
-        if com_type in ["NO_RESP", "REMOTE_FUN_CALL"]:
-            writer.write(msgpack_serialization({"__COM_TYPE__": com_type, "__MSG__": message}))
-        elif com_type in ["SCHEDULE_OPERATOR", "REGISTER_OPERATOR_INGRESS", "RUN_FUN"]:
-            writer.write(cloudpickle.dumps({"__COM_TYPE__": com_type, "__MSG__": message}))
+        if com_type == "NO_RESP":
+            writer.write(msgpack_serialization({"__COM_TYPE__": "NO_RESP", "__MSG__": message}))
+        elif com_type == "REMOTE_FUN_CALL":
+            writer.write(msgpack_serialization({"__COM_TYPE__": "REMOTE_FUN_CALL", "__MSG__": message}))
+        elif com_type == "SCHEDULE_OPERATOR":
+            writer.write(cloudpickle.dumps({"__COM_TYPE__": "SCHEDULE_OPERATOR", "__MSG__": message}))
+        elif com_type == "REGISTER_OPERATOR_INGRESS":
+            writer.write(cloudpickle.dumps({"__COM_TYPE__": "REGISTER_OPERATOR_INGRESS", "__MSG__": message}))
+        elif com_type == 'RUN_FUN':
+            writer.write(cloudpickle.dumps({"__COM_TYPE__": "RUN_FUN", "__MSG__": message}))
         else:
             logging.error(f"Invalid communication type: {com_type}")
         await writer.drain()

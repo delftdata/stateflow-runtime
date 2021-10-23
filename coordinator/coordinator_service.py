@@ -5,7 +5,7 @@ import cloudpickle
 from common.networking import async_transmit_tcp_no_response
 from common.logging import logging
 from common.stateflow_worker import StateflowWorker
-from common.opeartor import Operator
+from common.operator import Operator
 
 from coordinator import Coordinator
 
@@ -25,8 +25,8 @@ async def receive_data_coordinator(reader, writer):
             logging.info(f"Scheduling: {message}")
             operator: Operator
             target_worker: StateflowWorker
-            operator_name, operator, dns, target_worker = message
-            schedule_operator_message = (operator, dns)
+            operator_name, partition, operator, dns, target_worker = message
+            schedule_operator_message = (operator, partition, dns)
             await async_transmit_tcp_no_response(target_worker.host,
                                                  target_worker.port,
                                                  schedule_operator_message,
@@ -40,13 +40,14 @@ async def receive_data_coordinator(reader, writer):
             await writer.drain()
             logging.info(f"Closing writer")
             writer.close()
+            await writer.wait_closed()
         elif message_type == 'REGISTER_OPERATOR_INGRESS':
             # Register the operator addresses to an ingress
             logging.info(f"REGISTER_OPERATOR_INGRESS: {message}")
-            operator_name, operator_host, operator_port, ingress_host, ingress_port = message
+            operator_name, partition, operator_host, operator_port, ingress_host, ingress_port = message
             await async_transmit_tcp_no_response(ingress_host,
                                                  ingress_port,
-                                                 (operator_name, operator_host, operator_port),
+                                                 (operator_name, partition, operator_host, operator_port),
                                                  com_type='REGISTER_OPERATOR_INGRESS')
         else:
             logging.error(f"COORDINATOR SERVER: Non supported message type: {message_type}")

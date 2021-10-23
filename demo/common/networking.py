@@ -89,5 +89,4 @@ async def async_transmit_tcp_request_response(host: str, port: int, message: obj
     writer.write(msgpack_serialization({"__COM_TYPE__": "REQ_RESP", "__MSG__": message}))
     data = await reader.read()
     writer.close()
-    await writer.wait_closed()
     return msgpack_deserialization(data)

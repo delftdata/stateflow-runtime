@@ -13,11 +13,12 @@ class NotAFunctionError(Exception):
 
 class Operator(BaseOperator):
     # each operator is a coroutine? and a server. Client is already implemented in the networking module
-    def __init__(self, name: str):
+    def __init__(self, name: str, partitions: int = 1):
         super().__init__(name)
         self.state: OperatorState = OperatorState()
         self.functions: dict[str, Union[Function, StatefulFunction]] = {}
         self.dns = {}  # where the other functions exist
+        self.partitions = partitions
 
     async def run_function(self, function_name: str, *params) -> Awaitable:
         logging.info(f'PROCESSING FUNCTION -> {function_name} of operator: {self.name} with params: {params}')

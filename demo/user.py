@@ -1,4 +1,4 @@
-from common.opeartor import StatefulFunction
+from common.operator import StatefulFunction
 
 
 class CreateUser(StatefulFunction):

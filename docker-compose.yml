@@ -1,13 +1,63 @@
 version: "3"
 services:
 
-  ingress-0:
+  frontend:
+    build:
+      context: demo
+      dockerfile: frontend.dockerfile
+    image: dev/universalis-demo-frontend:latest
+    environment:
+      - UNIVERSALIS_HOST=coordinator
+      - UNIVERSALIS_PORT=8888
+      - PYTHONUNBUFFERED=TRUE
+    ports:
+      - "5000:5000"
+    command: "gunicorn -b 0.0.0.0:5000 app:app --timeout 10 -w 4"
+    depends_on:
+      - coordinator
+
+  ingress:
     build:
       context: .
       dockerfile: ingress/ingress.Dockerfile
     image: dev/universalis-ingress:latest
+#    labels:
+#      - "traefik.enable=true"
+#      - "traefik.docker.network=traefik"
+#      - "traefik.tcp.routers.ingress.entrypoints=ingress"
+#      - "traefik.tcp.routers.ingress.rule=HostSNI(`*`)"
+#      - "traefik.tcp.routers.ingress.service=ingressservice"
+#      - "traefik.tcp.services.ingressservice.loadbalancer.server.port=8080"
+#    networks:
+#      - traefik
+#    ports:
+#      - "8885:8888"
+
+  nginx:
+    image: nginx:latest
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - ingress
     ports:
-      - "8885:8888"
+      - "4000:4000"
+
+#  traefik:
+#    image: "traefik:v2.5"
+#    container_name: "traefik"
+#    command:
+#      - "--log.level=DEBUG"
+#      - "--api.insecure=true"
+#      - "--providers.docker=true"
+#      - "--providers.docker.exposedbydefault=false"
+#      - "--entrypoints.web.address=:80"
+#      - "--entrypoints.ingress.address=:8885"
+#    ports:
+#      - "80:80"
+#      - "8080:8080"
+#      - "8885:8885"
+#    volumes:
+#      - "/var/run/docker.sock:/var/run/docker.sock:ro"
 
   coordinator:
     build:
@@ -23,7 +73,6 @@ services:
       dockerfile: worker/worker.dockerfile
     image: dev/universalis:latest
     environment:
-      - PYTHONUNBUFFERED=1
       - OWN_ADDRESS_NAME=worker-0
       - OWN_PORT=8887
     ports:
@@ -35,7 +84,6 @@ services:
       dockerfile: worker/worker.dockerfile
     image: dev/universalis:latest
     environment:
-      - PYTHONUNBUFFERED=1
       - OWN_ADDRESS_NAME=worker-1
       - OWN_PORT=8888
     ports:
@@ -47,8 +95,12 @@ services:
       dockerfile: worker/worker.dockerfile
     image: dev/universalis:latest
     environment:
-      - PYTHONUNBUFFERED=1
       - OWN_ADDRESS_NAME=worker-2
       - OWN_PORT=8889
     ports:
       - "8889:8888"
+
+#networks:
+#  traefik:
+#    external:
+#      name: docker_default
