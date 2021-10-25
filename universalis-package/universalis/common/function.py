@@ -1,7 +1,5 @@
 from abc import ABC, abstractmethod
 
-from common.network_client import NetworkTCPClient
-
 
 class Function(ABC):
 

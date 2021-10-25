@@ -3,8 +3,8 @@ from abc import abstractmethod
 
 import cloudpickle
 
-from common.function import Function
-from common.state import OperatorState
+from universalis.common.function import Function
+from universalis.common.state import OperatorState
 
 
 class StateNotAttachedError(Exception):
@@ -37,8 +37,8 @@ class StatefulFunction(Function):
         payload = {'__OP_NAME__': operator_name, '__FUN_NAME__': function_name, '__PARAMS__': params}
         writer.write(cloudpickle.dumps({"__COM_TYPE__": "REMOTE_RUN_FUN", "__MSG__": payload}))
         await writer.drain()
-        # writer.close()
-        # await writer.wait_closed()
+        writer.close()
+        await writer.wait_closed()
 
     def attach_state(self, operator_state: OperatorState):
         self.state = operator_state

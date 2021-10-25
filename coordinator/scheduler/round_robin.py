@@ -1,8 +1,8 @@
-from common.stateflow_graph import StateflowGraph
-from common.stateflow_ingress import StateflowIngress
-from common.stateflow_worker import StateflowWorker
-from common.network_client import NetworkTCPClient
-from common.logging import logging
+from universalis.common.stateflow_graph import StateflowGraph
+from universalis.common.stateflow_ingress import StateflowIngress
+from universalis.common.stateflow_worker import StateflowWorker
+from universalis.common import NetworkTCPClient
+from universalis.common.logging import logging
 
 from .base_scheduler import BaseScheduler
 
@@ -15,8 +15,8 @@ class RoundRobin(BaseScheduler):
 
     async def schedule(self,
                        workers: list[StateflowWorker],
-                       ingresses: list[StateflowIngress],
-                       execution_graph: StateflowGraph) -> tuple:
+                       ingress: StateflowIngress,
+                       execution_graph: StateflowGraph):
 
         for operator_name, operator, connections in iter(execution_graph):
             for partition in range(operator.partitions):
@@ -35,12 +35,10 @@ class RoundRobin(BaseScheduler):
                                                                               dns,
                                                                               self.schedule_plan[operator_partition_name]),
                                                                      com_type="SCHEDULE_OPERATOR")
-                logging.info(f'Registering: {operator_name} \n\t to ingress: {ingresses[0]}')
                 await self.networking.async_transmit_tcp_no_response(message=(operator_name,
                                                                               partition,
                                                                               self.schedule_plan[operator_partition_name].host,
                                                                               self.schedule_plan[operator_partition_name].port,
-                                                                              ingresses[0].host,
-                                                                              ingresses[0].port),
+                                                                              ingress,
+                                                                              ingress),
                                                                      com_type="REGISTER_OPERATOR_INGRESS")
-        return ingresses[0].ext_host, ingresses[0].ext_port

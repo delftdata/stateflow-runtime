@@ -5,9 +5,9 @@ from asyncio import StreamWriter
 import cloudpickle
 import uvloop
 
-from common.logging import logging
-from common.serialization import msgpack_deserialization
-from common.stateflow_worker import StateflowWorker
+from universalis.common.logging import logging
+from universalis.common.serialization import msgpack_deserialization
+from universalis.common.stateflow_worker import StateflowWorker
 
 SERVER_PORT = 8888
 

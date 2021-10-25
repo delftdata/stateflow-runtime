@@ -2,17 +2,17 @@ import asyncio
 import uvloop
 import cloudpickle
 
-from common.networking import async_transmit_tcp_no_response
-from common.logging import logging
-from common.stateflow_worker import StateflowWorker
-from common.operator import Operator
+from universalis.common.networking import async_transmit_tcp_no_response
+from universalis.common.logging import logging
+from universalis.common.stateflow_worker import StateflowWorker
+from universalis.common.operator import Operator
 
 from coordinator import Coordinator
 
 SERVER_PORT = 8888
 
 
-async def receive_data_coordinator(reader, writer):
+async def receive_data_coordinator(reader, _):
     data: bytes = await reader.read()
     deserialized_data: dict = cloudpickle.loads(data)
     if '__COM_TYPE__' not in deserialized_data:
@@ -34,13 +34,7 @@ async def receive_data_coordinator(reader, writer):
         elif message_type == 'SEND_EXECUTION_GRAPH':
             # Received execution graph from a universalis client
             coordinator = Coordinator()
-            serving_ingress = await coordinator.submit_stateflow_graph(message)
-            logging.info(f"SERVING_INGRESS: {serving_ingress}")
-            writer.write(cloudpickle.dumps(serving_ingress))
-            await writer.drain()
-            logging.info(f"Closing writer")
-            writer.close()
-            await writer.wait_closed()
+            await coordinator.submit_stateflow_graph(message)
         elif message_type == 'REGISTER_OPERATOR_INGRESS':
             # Register the operator addresses to an ingress
             logging.info(f"REGISTER_OPERATOR_INGRESS: {message}")

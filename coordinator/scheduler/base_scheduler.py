@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
 
-from common.stateflow_graph import StateflowGraph
-from common.stateflow_ingress import StateflowIngress
-from common.stateflow_worker import StateflowWorker
+from universalis.common.stateflow_graph import StateflowGraph
+from universalis.common.stateflow_ingress import StateflowIngress
+from universalis.common.stateflow_worker import StateflowWorker
 
 
 class BaseScheduler(ABC):
@@ -10,6 +10,6 @@ class BaseScheduler(ABC):
     @abstractmethod
     async def schedule(self,
                        workers: list[StateflowWorker],
-                       ingresses: list[StateflowIngress],
+                       ingress: StateflowIngress,
                        execution_graph: StateflowGraph):
         raise NotImplementedError

@@ -3,9 +3,9 @@ import cloudpickle
 
 from asyncio import PriorityQueue, sleep, get_running_loop, start_server, run
 
-from common.logging import logging
-from common.operator import Operator
-from common.stateflow_worker import StateflowWorker
+from universalis.common.logging import logging
+from universalis.common.operator import Operator
+from universalis.common.stateflow_worker import StateflowWorker
 
 SERVER_PORT = 8888
 INTERNAL_WATERMARK_SECONDS = 0.005  # 5ms

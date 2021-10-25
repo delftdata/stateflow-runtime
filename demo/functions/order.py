@@ -1,4 +1,4 @@
-from common.operator import StatefulFunction
+from universalis.common.operator import StatefulFunction
 
 
 class CreateOrder(StatefulFunction):

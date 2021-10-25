@@ -1,10 +1,10 @@
 from typing import Union, Awaitable
 
-from common.logging import logging
-from common.base_operator import BaseOperator
-from common.function import Function
-from common.state import OperatorState
-from common.stateful_function import StatefulFunction
+from universalis.common.logging import logging
+from universalis.common.base_operator import BaseOperator
+from universalis.common.function import Function
+from universalis.common.state import OperatorState
+from universalis.common.stateful_function import StatefulFunction
 
 
 class NotAFunctionError(Exception):

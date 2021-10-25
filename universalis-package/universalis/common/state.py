@@ -1,7 +1,7 @@
 from asyncio import Lock
 from typing import Any
 
-from common.logging import logging
+from universalis.common.logging import logging
 
 
 class OperatorState:

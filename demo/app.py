@@ -3,11 +3,9 @@ import uuid
 
 from flask import Flask, jsonify, Response
 
-from common.operator import Operator
-from common.stateflow_graph import StateflowGraph
-import user
-import stock
-import order
+from universalis.common.operator import Operator
+from universalis.common.stateflow_graph import StateflowGraph
+from demo.functions import order, stock, user
 from universalis.universalis import Universalis
 
 app = Flask(__name__)
@@ -94,7 +92,7 @@ def add_item(order_key: str, item_key: str):
 
 @app.post('/order/checkout/<order_key>')
 def checkout_order(order_key: str):
-    universalis.send_tcp_event(order_operator, order_key, order.Checkout(), (order_key, ))
+    universalis.send_tcp_event(order_operator, order_key, order.Checkout(), (order_key,))
     return Response('Checkout started', status=200)
 
 

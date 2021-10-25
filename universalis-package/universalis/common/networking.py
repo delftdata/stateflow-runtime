@@ -3,8 +3,8 @@ from socket import socket, AF_INET, SOCK_STREAM
 
 import cloudpickle
 
-from common.logging import logging
-from common.serialization import msgpack_serialization, msgpack_deserialization
+from universalis.common.logging import logging
+from universalis.common.serialization import msgpack_serialization, msgpack_deserialization
 
 BUFFER_SIZE = 4096  # in bytes
 
@@ -89,4 +89,5 @@ async def async_transmit_tcp_request_response(host: str, port: int, message: obj
     writer.write(msgpack_serialization({"__COM_TYPE__": "REQ_RESP", "__MSG__": message}))
     data = await reader.read()
     writer.close()
+    await writer.wait_closed()
     return msgpack_deserialization(data)

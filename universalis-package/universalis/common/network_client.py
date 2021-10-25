@@ -1,8 +1,8 @@
 import asyncio
 import cloudpickle
 
-from common.logging import logging
-from common.serialization import msgpack_serialization
+from universalis.common.logging import logging
+from universalis.common.serialization import msgpack_serialization
 
 
 class NetworkTCPClient:
