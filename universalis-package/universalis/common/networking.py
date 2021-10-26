@@ -60,7 +60,7 @@ def transmit_tcp_no_response(host: str, port: int, message: object, com_type: st
 
 async def async_transmit_tcp_no_response(host: str, port: int, message: object, com_type: str = "NO_RESP") -> None:
     _, writer = await asyncio.open_connection(host, port)
-    if com_type in ["NO_RESP", "INVOKE_LOCAL", "REGISTER_OPERATOR_INGRESS"]:
+    if com_type in ["NO_RESP", "INVOKE_LOCAL", "REGISTER_OPERATOR_DISCOVERY", "REMOTE_FUN_CALL"]:
         writer.write(msgpack_serialization({"__COM_TYPE__": com_type, "__MSG__": message}))
     elif com_type in ["RUN_FUN", "RECEIVE_EXE_PLN", "REGISTER_OPERATOR"]:
         writer.write(cloudpickle.dumps({"__COM_TYPE__": com_type, "__MSG__": message}))

@@ -3,9 +3,9 @@ import time
 import cloudpickle
 
 from universalis.common.logging import logging
+from universalis.common.networking import async_transmit_tcp_no_response
 from universalis.common.stateflow_graph import StateflowGraph
 from universalis.common.stateflow_worker import StateflowWorker
-from universalis.common.network_client import NetworkTCPClient
 from universalis.common.operator import BaseOperator, StatefulFunction
 
 
@@ -43,8 +43,11 @@ class Universalis:
                  '__FUN_NAME__': function.name,
                  '__PARAMS__': params,
                  '__TIMESTAMP__': timestamp}
-        ingress = NetworkTCPClient(self.ingress_that_serves.host, self.ingress_that_serves.port)
-        asyncio.run(ingress.async_transmit_tcp_no_response(event, com_type='REMOTE_FUN_CALL'))
+
+        asyncio.run(async_transmit_tcp_no_response(self.ingress_that_serves.host,
+                                                   self.ingress_that_serves.port,
+                                                   event,
+                                                   com_type='REMOTE_FUN_CALL'))
 
     async def send_execution_graph(self, stateflow_graph: StateflowGraph):
         _, writer = await asyncio.open_connection(self.coordinator_adr, self.coordinator_port)

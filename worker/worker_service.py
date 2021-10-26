@@ -47,7 +47,6 @@ async def receive_data_tcp(reader, _):
             logging.info(f'Registered operators: {registered_operators}')
         else:
             logging.error(f"TCP SERVER: Non supported message type: {message_type}")
-        logging.info(f'Finished doing whatever')
 
 
 async def process_queue():

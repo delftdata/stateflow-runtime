@@ -36,7 +36,7 @@ async def receive_data_discovery(reader, writer: StreamWriter):
 
 async def main():
     server = await asyncio.start_server(receive_data_discovery, '0.0.0.0', SERVER_PORT)
-    logging.info(f"Ingress Server listening at 0.0.0.0:{SERVER_PORT}")
+    logging.info(f"Discovery Server listening at 0.0.0.0:{SERVER_PORT}")
 
     async with server:
         await server.serve_forever()

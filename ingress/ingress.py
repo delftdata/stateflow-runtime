@@ -5,6 +5,7 @@ from asyncio import StreamWriter
 
 import cloudpickle
 import uvloop
+import time
 
 from universalis.common.logging import logging
 from universalis.common.networking import async_transmit_tcp_request_response
@@ -56,11 +57,12 @@ async def receive_data_ingress(reader, _):
             operator_name = message['__OP_NAME__']
             key = message['__KEY__']
             try:
-                partition: int = int(make_key_hashable(key)) % len(registered_operators[operator_name].keys())
                 try:
+                    partition: int = int(make_key_hashable(key)) % len(registered_operators[operator_name].keys())
                     worker: StateflowWorker = registered_operators[operator_name][partition]
                 except KeyError:
                     registered_operators = await get_registered_operators()
+                    partition: int = int(make_key_hashable(key)) % len(registered_operators[operator_name].keys())
                     worker: StateflowWorker = registered_operators[operator_name][partition]
                 # if (worker.host, worker.port) not in open_connections:
                 logging.info(f"Opening connection to: {worker.host}:{worker.port}")
@@ -82,10 +84,17 @@ async def receive_data_ingress(reader, _):
 
 
 async def main():
-    global registered_operators
-    registered_operators: dict[dict[int, StateflowWorker]] = await get_registered_operators()
-    logging.info(f"Received operators:{registered_operators}")
-
+    # global registered_operators
+    # while True:
+    #     try:
+    #         registered_operators = await get_registered_operators()
+    #         logging.info(f"Received operators:{registered_operators}")
+    #     except ConnectionRefusedError:
+    #         time.sleep(0.05)
+    #         continue
+    #     else:
+    #         break
+    # FIX DISCOVERY TABLE RETRIEVAL
     server = await asyncio.start_server(receive_data_ingress, '0.0.0.0', SERVER_PORT)
     logging.info(f"Ingress Server listening at 0.0.0.0:{SERVER_PORT}")
 
