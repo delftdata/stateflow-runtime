@@ -1,0 +1,2 @@
+uvloop==0.16.0
+msgpack==1.0.2

@@ -19,6 +19,9 @@ services:
     build:
       context: .
       dockerfile: ingress/ingress.Dockerfile
+    environment:
+      - DISCOVERY_HOST=discovery
+      - DISCOVERY_PORT=8885
     image: dev/universalis-ingress:latest
 
   ingress-load-balancer:
@@ -30,10 +33,21 @@ services:
     ports:
       - "4000:4000"
 
+  discovery:
+    build:
+      context: .
+      dockerfile: discovery/discovery.Dockerfile
+    image: dev/universalis-discovery:latest
+    ports:
+      - "8885:8888"
+
   coordinator:
     build:
       context: .
       dockerfile: coordinator/coordinator.dockerfile
+    environment:
+      - DISCOVERY_HOST=discovery
+      - DISCOVERY_PORT=8885
     image: dev/universalis-coordinator:latest
     ports:
       - "8886:8888"

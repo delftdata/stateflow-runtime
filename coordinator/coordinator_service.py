@@ -1,4 +1,6 @@
 import asyncio
+import os
+
 import uvloop
 import cloudpickle
 
@@ -10,6 +12,8 @@ from universalis.common.operator import Operator
 from coordinator import Coordinator
 
 SERVER_PORT = 8888
+DISCOVERY_HOST = os.environ['DISCOVERY_HOST']
+DISCOVERY_PORT = int(os.environ['DISCOVERY_PORT'])
 
 
 async def receive_data_coordinator(reader, _):
@@ -35,14 +39,14 @@ async def receive_data_coordinator(reader, _):
             # Received execution graph from a universalis client
             coordinator = Coordinator()
             await coordinator.submit_stateflow_graph(message)
-        elif message_type == 'REGISTER_OPERATOR_INGRESS':
+        elif message_type == 'REGISTER_OPERATOR_DISCOVERY':
             # Register the operator addresses to an ingress
-            logging.info(f"REGISTER_OPERATOR_INGRESS: {message}")
-            operator_name, partition, operator_host, operator_port, ingress_host, ingress_port = message
-            await async_transmit_tcp_no_response(ingress_host,
-                                                 ingress_port,
+            logging.info(f"REGISTER_OPERATOR_DISCOVERY: {message}")
+            operator_name, partition, operator_host, operator_port = message
+            await async_transmit_tcp_no_response(DISCOVERY_HOST,
+                                                 DISCOVERY_PORT,
                                                  (operator_name, partition, operator_host, operator_port),
-                                                 com_type='REGISTER_OPERATOR_INGRESS')
+                                                 com_type='REGISTER_OPERATOR_DISCOVERY')
         else:
             logging.error(f"COORDINATOR SERVER: Non supported message type: {message_type}")
 

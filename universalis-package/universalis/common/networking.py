@@ -60,22 +60,10 @@ def transmit_tcp_no_response(host: str, port: int, message: object, com_type: st
 
 async def async_transmit_tcp_no_response(host: str, port: int, message: object, com_type: str = "NO_RESP") -> None:
     _, writer = await asyncio.open_connection(host, port)
-    if com_type == "NO_RESP":
-        logging.debug(f"NO RESP Target machine: {host}:{port} message: {message}")
-        writer.write(msgpack_serialization({"__COM_TYPE__": "NO_RESP", "__MSG__": message}))
-    elif com_type == "GET_PEERS":
-        writer.write(msgpack_serialization({"__COM_TYPE__": "GET_PEERS", "__MSG__": message}))
-    elif com_type == "INVOKE_LOCAL":
-        writer.write(msgpack_serialization({"__COM_TYPE__": "INVOKE_LOCAL", "__MSG__": message}))
-    elif com_type == "RUN_FUN":
-        writer.write(cloudpickle.dumps({"__COM_TYPE__": "RUN_FUN", "__MSG__": message}))
-    elif com_type == "RECEIVE_EXE_PLN":
-        message: bytes
-        writer.write(cloudpickle.dumps({"__COM_TYPE__": "RECEIVE_EXE_PLN", "__MSG__": message}))
-    elif com_type == "REGISTER_OPERATOR_INGRESS":
-        writer.write(msgpack_serialization({"__COM_TYPE__": "REGISTER_OPERATOR_INGRESS", "__MSG__": message}))
-    elif com_type == "REGISTER_OPERATOR":
-        writer.write(cloudpickle.dumps({"__COM_TYPE__": "REGISTER_OPERATOR", "__MSG__": message}))
+    if com_type in ["NO_RESP", "INVOKE_LOCAL", "REGISTER_OPERATOR_INGRESS"]:
+        writer.write(msgpack_serialization({"__COM_TYPE__": com_type, "__MSG__": message}))
+    elif com_type in ["RUN_FUN", "RECEIVE_EXE_PLN", "REGISTER_OPERATOR"]:
+        writer.write(cloudpickle.dumps({"__COM_TYPE__": com_type, "__MSG__": message}))
     else:
         logging.error(f"Invalid communication type: {com_type}")
     await writer.drain()
@@ -83,7 +71,7 @@ async def async_transmit_tcp_no_response(host: str, port: int, message: object, 
     await writer.wait_closed()
 
 
-async def async_transmit_tcp_request_response(host: str, port: int, message: object) -> object:
+async def async_transmit_tcp_request_response(host: str, port: int, message: object):
     reader, writer = await asyncio.open_connection(host, port)
     logging.debug(f"REQ RESP Target machine: {host}:{port} message: {message}")
     writer.write(msgpack_serialization({"__COM_TYPE__": "REQ_RESP", "__MSG__": message}))

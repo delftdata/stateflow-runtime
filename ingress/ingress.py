@@ -1,4 +1,5 @@
 import asyncio
+import os
 import uuid
 from asyncio import StreamWriter
 
@@ -6,10 +7,13 @@ import cloudpickle
 import uvloop
 
 from universalis.common.logging import logging
-from universalis.common.serialization import msgpack_deserialization
+from universalis.common.networking import async_transmit_tcp_request_response
+from universalis.common.serialization import msgpack_deserialization, msgpack_serialization
 from universalis.common.stateflow_worker import StateflowWorker
 
 SERVER_PORT = 8888
+DISCOVERY_HOST = os.environ['DISCOVERY_HOST']
+DISCOVERY_PORT = int(os.environ['DISCOVERY_PORT'])
 
 
 class StrKeyNotUUID(Exception):
@@ -31,7 +35,15 @@ def make_key_hashable(key):
     return key
 
 
+async def get_registered_operators() -> dict[dict[int, StateflowWorker]]:
+    return await async_transmit_tcp_request_response(DISCOVERY_HOST,
+                                                     DISCOVERY_PORT,
+                                                     msgpack_serialization({"__COM_TYPE__": "DISCOVER",
+                                                                            "__MSG__": ""}))
+
+
 async def receive_data_ingress(reader, _):
+    global registered_operators
     data: bytes = await reader.read()
     deserialized_data = msgpack_deserialization(data)
     if '__COM_TYPE__' not in deserialized_data:
@@ -39,21 +51,17 @@ async def receive_data_ingress(reader, _):
     else:
         message_type: str = deserialized_data['__COM_TYPE__']
         message: dict = deserialized_data['__MSG__']
-        if message_type == 'REGISTER_OPERATOR_INGRESS':
-            # RECEIVE MESSAGE FROM COORDINATOR TO REGISTER AN OPERATORS LOCATION i.e. (in which worker it resides)
-            operator_name, partition_number, address, port = message
-            logging.debug(f"REGISTER_OPERATOR_INGRESS: {registered_routable_operators}")
-            if operator_name in registered_routable_operators:
-                registered_routable_operators[operator_name].update({partition_number: StateflowWorker(address, port)})
-            else:
-                registered_routable_operators[operator_name] = {partition_number: StateflowWorker(address, port)}
-        elif message_type == 'REMOTE_FUN_CALL':
+        if message_type == 'REMOTE_FUN_CALL':
             # RECEIVE MESSAGE FROM A CLIENT TO PASS INTO A STATEFLOW GRAPH'S OPERATOR FUNCTION
             operator_name = message['__OP_NAME__']
             key = message['__KEY__']
             try:
-                partition: int = int(make_key_hashable(key)) % len(registered_routable_operators[operator_name].keys())
-                worker: StateflowWorker = registered_routable_operators[operator_name][partition]
+                partition: int = int(make_key_hashable(key)) % len(registered_operators[operator_name].keys())
+                try:
+                    worker: StateflowWorker = registered_operators[operator_name][partition]
+                except KeyError:
+                    registered_operators = await get_registered_operators()
+                    worker: StateflowWorker = registered_operators[operator_name][partition]
                 # if (worker.host, worker.port) not in open_connections:
                 logging.info(f"Opening connection to: {worker.host}:{worker.port}")
                 _, worker_writer = await asyncio.open_connection(worker.host, worker.port)
@@ -74,6 +82,10 @@ async def receive_data_ingress(reader, _):
 
 
 async def main():
+    global registered_operators
+    registered_operators: dict[dict[int, StateflowWorker]] = await get_registered_operators()
+    logging.info(f"Received operators:{registered_operators}")
+
     server = await asyncio.start_server(receive_data_ingress, '0.0.0.0', SERVER_PORT)
     logging.info(f"Ingress Server listening at 0.0.0.0:{SERVER_PORT}")
 
@@ -82,7 +94,7 @@ async def main():
 
 
 if __name__ == "__main__":
-    registered_routable_operators: dict[dict[int, StateflowWorker]] = {}
+    registered_operators: dict[dict[int, StateflowWorker]] = {}
     open_connections: dict[tuple, StreamWriter] = {}
     uvloop.install()
     asyncio.run(main())

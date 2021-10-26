@@ -1,7 +1,7 @@
 from universalis.common.stateflow_graph import StateflowGraph
-from universalis.common.stateflow_ingress import StateflowIngress
+# from universalis.common.stateflow_ingress import StateflowIngress
 from universalis.common.stateflow_worker import StateflowWorker
-from universalis.common import NetworkTCPClient
+from universalis.common.network_client import NetworkTCPClient
 from universalis.common.logging import logging
 
 from .base_scheduler import BaseScheduler
@@ -15,7 +15,8 @@ class RoundRobin(BaseScheduler):
 
     async def schedule(self,
                        workers: list[StateflowWorker],
-                       ingress: StateflowIngress,
+                       ingress: StateflowWorker,
+                       # ingress: StateflowIngress,
                        execution_graph: StateflowGraph):
 
         for operator_name, operator, connections in iter(execution_graph):
@@ -38,7 +39,5 @@ class RoundRobin(BaseScheduler):
                 await self.networking.async_transmit_tcp_no_response(message=(operator_name,
                                                                               partition,
                                                                               self.schedule_plan[operator_partition_name].host,
-                                                                              self.schedule_plan[operator_partition_name].port,
-                                                                              ingress,
-                                                                              ingress),
-                                                                     com_type="REGISTER_OPERATOR_INGRESS")
+                                                                              self.schedule_plan[operator_partition_name].port),
+                                                                     com_type="REGISTER_OPERATOR_DISCOVERY")

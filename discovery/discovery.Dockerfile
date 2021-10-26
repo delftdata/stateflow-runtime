@@ -1,6 +1,6 @@
-FROM python:3-slim
+FROM python:3.9-slim
 
-COPY demo/requirements.txt /var/local/universalis/
+COPY discovery/requirements.txt /var/local/universalis/
 COPY universalis-package /var/local/universalis-package/
 
 RUN groupadd universalis \
@@ -10,14 +10,16 @@ RUN pip install --upgrade pip \
     && pip install --prefix=/usr/local -r /var/local/universalis/requirements.txt \
     && pip install --prefix=/usr/local ./var/local/universalis-package/
 
-WORKDIR /usr/local/universalis/demo
+WORKDIR /usr/local/universalis
 
-COPY --chown=universalis demo .
+COPY --chown=universalis discovery discovery
+
+COPY discovery/start-discovery.sh /usr/local/bin/
+RUN chmod a+x /usr/local/bin/start-discovery.sh
 
 ENV PYTHONPATH /usr/local/universalis
 
 USER universalis
-CMD ["gunicorn", "-b", "0.0.0.0:5000", "app:app", "--timeout", "10", "-w", "4"]
+CMD ["/usr/local/bin/start-discovery.sh"]
 
-# default flask port
-EXPOSE 5000
+EXPOSE 8888
