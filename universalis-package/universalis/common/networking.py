@@ -71,11 +71,14 @@ async def async_transmit_tcp_no_response(host: str, port: int, message: object, 
     await writer.wait_closed()
 
 
-async def async_transmit_tcp_request_response(host: str, port: int, message: object):
+async def async_transmit_tcp_request_response(host: str, port: int, message: object, com_type: str = "REQ_RESP"):
     reader, writer = await asyncio.open_connection(host, port)
     logging.debug(f"REQ RESP Target machine: {host}:{port} message: {message}")
-    writer.write(msgpack_serialization({"__COM_TYPE__": "REQ_RESP", "__MSG__": message}))
+    writer.write(msgpack_serialization({"__COM_TYPE__": com_type, "__MSG__": message}))
+    await writer.drain()
+    writer.write_eof()
     data = await reader.read()
     writer.close()
     await writer.wait_closed()
+    logging.info(f"data: {data}")
     return msgpack_deserialization(data)

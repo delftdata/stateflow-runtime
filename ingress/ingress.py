@@ -5,11 +5,10 @@ from asyncio import StreamWriter
 
 import cloudpickle
 import uvloop
-import time
 
 from universalis.common.logging import logging
 from universalis.common.networking import async_transmit_tcp_request_response
-from universalis.common.serialization import msgpack_deserialization, msgpack_serialization
+from universalis.common.serialization import msgpack_deserialization
 from universalis.common.stateflow_worker import StateflowWorker
 
 SERVER_PORT = 8888
@@ -39,8 +38,8 @@ def make_key_hashable(key):
 async def get_registered_operators() -> dict[dict[int, StateflowWorker]]:
     return await async_transmit_tcp_request_response(DISCOVERY_HOST,
                                                      DISCOVERY_PORT,
-                                                     msgpack_serialization({"__COM_TYPE__": "DISCOVER",
-                                                                            "__MSG__": ""}))
+                                                     "",
+                                                     com_type="DISCOVER")
 
 
 async def receive_data_ingress(reader, _):
@@ -58,17 +57,18 @@ async def receive_data_ingress(reader, _):
             key = message['__KEY__']
             try:
                 try:
-                    partition: int = int(make_key_hashable(key)) % len(registered_operators[operator_name].keys())
-                    worker: StateflowWorker = registered_operators[operator_name][partition]
+                    partition: str = str(int(make_key_hashable(key)) % len(registered_operators[operator_name].keys()))
+                    worker: tuple[str, int] = registered_operators[operator_name][partition]
                 except KeyError:
                     registered_operators = await get_registered_operators()
-                    partition: int = int(make_key_hashable(key)) % len(registered_operators[operator_name].keys())
-                    worker: StateflowWorker = registered_operators[operator_name][partition]
-                # if (worker.host, worker.port) not in open_connections:
+                    logging.info(registered_operators)
+                    partition: str = str(int(make_key_hashable(key)) % len(registered_operators[operator_name].keys()))
+                    worker: tuple[str, int] = registered_operators[operator_name][partition]
+                worker: StateflowWorker = StateflowWorker(worker[0], worker[1])
                 logging.info(f"Opening connection to: {worker.host}:{worker.port}")
                 _, worker_writer = await asyncio.open_connection(worker.host, worker.port)
                 open_connections[(worker.host, worker.port)] = worker_writer
-                message.update({'__PARTITION__': partition})
+                message.update({'__PARTITION__': int(partition)})
                 logging.debug(f'Sending packet: {message} to {worker.host}:{worker.port}')
                 open_connections[(worker.host, worker.port)].write(cloudpickle.dumps({"__COM_TYPE__": "RUN_FUN",
                                                                                       "__MSG__": message}))
@@ -84,17 +84,6 @@ async def receive_data_ingress(reader, _):
 
 
 async def main():
-    # global registered_operators
-    # while True:
-    #     try:
-    #         registered_operators = await get_registered_operators()
-    #         logging.info(f"Received operators:{registered_operators}")
-    #     except ConnectionRefusedError:
-    #         time.sleep(0.05)
-    #         continue
-    #     else:
-    #         break
-    # FIX DISCOVERY TABLE RETRIEVAL
     server = await asyncio.start_server(receive_data_ingress, '0.0.0.0', SERVER_PORT)
     logging.info(f"Ingress Server listening at 0.0.0.0:{SERVER_PORT}")
 
@@ -103,7 +92,7 @@ async def main():
 
 
 if __name__ == "__main__":
-    registered_operators: dict[dict[int, StateflowWorker]] = {}
+    registered_operators: dict[dict[str, tuple[str, int]]] = {}
     open_connections: dict[tuple, StreamWriter] = {}
     uvloop.install()
     asyncio.run(main())

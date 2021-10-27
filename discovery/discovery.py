@@ -18,18 +18,21 @@ async def receive_data_discovery(reader, writer: StreamWriter):
         message_type: str = deserialized_data['__COM_TYPE__']
         message: dict = deserialized_data['__MSG__']
         if message_type == 'DISCOVER':
-            writer.write(msgpack_serialization(message))
+            reply = msgpack_serialization(operator_partition_locations)
+            logging.info(f"DISCOVER reply: {reply}")
+            writer.write(reply)
             await writer.drain()
+            writer.write_eof()
             writer.close()
             await writer.wait_closed()
         elif message_type == 'REGISTER_OPERATOR_DISCOVERY':
             # RECEIVE MESSAGE FROM COORDINATOR TO REGISTER AN OPERATORS LOCATION i.e. (in which worker it resides)
             operator_name, partition_number, address, port = message
-            logging.debug(f"REGISTER_OPERATOR_DISCOVERY: {operator_partition_locations}")
+            logging.info(f"REGISTER_OPERATOR_DISCOVERY: {operator_partition_locations}")
             if operator_name in operator_partition_locations:
-                operator_partition_locations[operator_name].update({partition_number: StateflowWorker(address, port)})
+                operator_partition_locations[operator_name].update({str(partition_number): (address, port)})
             else:
-                operator_partition_locations[operator_name] = {partition_number: StateflowWorker(address, port)}
+                operator_partition_locations[operator_name] = {str(partition_number): (address, port)}
         else:
             logging.error(f"INGRESS SERVER: Non supported message type: {message_type}")
 
@@ -43,6 +46,6 @@ async def main():
 
 
 if __name__ == "__main__":
-    operator_partition_locations: dict[dict[int, StateflowWorker]] = {}
+    operator_partition_locations: dict[dict[str, tuple[str, int]]] = {}
     uvloop.install()
     asyncio.run(main())
