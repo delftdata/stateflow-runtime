@@ -80,5 +80,4 @@ async def async_transmit_tcp_request_response(host: str, port: int, message: obj
     data = await reader.read()
     writer.close()
     await writer.wait_closed()
-    logging.info(f"data: {data}")
     return msgpack_deserialization(data)

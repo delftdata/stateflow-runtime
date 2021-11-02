@@ -1,6 +1,5 @@
 import asyncio
 import os
-import uuid
 from asyncio import StreamWriter
 
 import cloudpickle
@@ -10,29 +9,11 @@ from universalis.common.logging import logging
 from universalis.common.networking import async_transmit_tcp_request_response
 from universalis.common.serialization import msgpack_deserialization
 from universalis.common.stateflow_worker import StateflowWorker
+from universalis.common.stateful_function import make_key_hashable, StrKeyNotUUID, NonSupportedKeyType
 
 SERVER_PORT = 8888
 DISCOVERY_HOST = os.environ['DISCOVERY_HOST']
 DISCOVERY_PORT = int(os.environ['DISCOVERY_PORT'])
-
-
-class StrKeyNotUUID(Exception):
-    pass
-
-
-class NonSupportedKeyType(Exception):
-    pass
-
-
-def make_key_hashable(key):
-    if isinstance(key, str):
-        try:
-            key = uuid.UUID(key)
-        except ValueError:
-            raise StrKeyNotUUID()
-    elif not isinstance(key, int):
-        raise NonSupportedKeyType()
-    return key
 
 
 async def get_registered_operators() -> dict[dict[int, StateflowWorker]]:

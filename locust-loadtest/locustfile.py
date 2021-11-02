@@ -3,7 +3,7 @@ import random
 
 from locust import HttpUser, SequentialTaskSet, between, task, constant
 
-FRONTEND_URL = 'http://localhost:5000'
+FRONTEND_URL = 'http://frontend:5000'
 
 
 def create_user(session):

@@ -1,10 +1,10 @@
 from typing import Union, Awaitable
 
-from universalis.common.logging import logging
-from universalis.common.base_operator import BaseOperator
-from universalis.common.function import Function
-from universalis.common.state import OperatorState
-from universalis.common.stateful_function import StatefulFunction
+from .logging import logging
+from .base_operator import BaseOperator
+from .function import Function
+from .stateful_function import StatefulFunction
+from .local_state_backends import LocalStateBackend
 
 
 class NotAFunctionError(Exception):
@@ -13,9 +13,13 @@ class NotAFunctionError(Exception):
 
 class Operator(BaseOperator):
     # each operator is a coroutine? and a server. Client is already implemented in the networking module
-    def __init__(self, name: str, partitions: int = 1):
+    def __init__(self,
+                 name: str,
+                 partitions: int = 1,
+                 operator_state_backend: LocalStateBackend = LocalStateBackend.DICT):
         super().__init__(name)
-        self.state: OperatorState = OperatorState()
+        self.state = None
+        self.operator_state_backend: LocalStateBackend = operator_state_backend
         self.functions: dict[str, Union[Function, StatefulFunction]] = {}
         self.dns = {}  # where the other functions exist
         self.partitions = partitions
@@ -32,12 +36,15 @@ class Operator(BaseOperator):
             raise NotAFunctionError
         stateful_function = function
         self.functions[stateful_function.name] = stateful_function
-        self.functions[stateful_function.name].attach_state(self.state)
+
+    def attach_state_to_functions(self, state):
+        self.state = state
+        for function in self.functions.values():
+            function.attach_state(self.state)
 
     def register_stateful_functions(self, *functions: StatefulFunction):
         for function in functions:
             self.register_stateful_function(function)
 
-    def set_dns(self, dns):
-        for function in self.functions.values():
-            function.set_dns(dns)
+    def set_function_timestamp(self, fun_name: str, timestamp: int):
+        self.functions[fun_name].set_timestamp(timestamp)

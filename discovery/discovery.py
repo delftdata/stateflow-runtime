@@ -4,7 +4,6 @@ from asyncio import StreamWriter
 import uvloop
 from universalis.common.logging import logging
 from universalis.common.serialization import msgpack_deserialization, msgpack_serialization
-from universalis.common.stateflow_worker import StateflowWorker
 
 SERVER_PORT = 8888
 

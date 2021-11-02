@@ -3,12 +3,26 @@ import cloudpickle
 
 from asyncio import PriorityQueue, sleep, get_running_loop, start_server, run
 
+from universalis.common.local_state_backends import LocalStateBackend
 from universalis.common.logging import logging
 from universalis.common.operator import Operator
-from universalis.common.stateflow_worker import StateflowWorker
+
+from worker.operator_state.in_memory_state import InMemoryOperatorState
+from worker.operator_state.redis_state import RedisOperatorState
 
 SERVER_PORT = 8888
 INTERNAL_WATERMARK_SECONDS = 0.005  # 5ms
+
+
+def attach_state_to_operator(operator: Operator):
+    if operator.operator_state_backend == LocalStateBackend.DICT:
+        state = InMemoryOperatorState()
+        operator.attach_state_to_functions(state)
+    elif operator.operator_state_backend == LocalStateBackend.REDIS:
+        state = RedisOperatorState()
+        operator.attach_state_to_functions(state)
+    else:
+        logging.error(f"Invalid operator state backend type: {operator.operator_state_backend}")
 
 
 async def receive_data_tcp(reader, _):
@@ -30,19 +44,17 @@ async def receive_data_tcp(reader, _):
                           f"with params: {function_params} at time: {timestamp}")
             queue_entry = timestamp, function_name, function_params
             await operator_queues[operator_name][partition].put(queue_entry)
-        elif message_type == 'REMOTE_RUN_FUN':
-            pass
         elif message_type == 'RECEIVE_EXE_PLN':
             # Receive operator from coordinator
             operator: Operator
-            dns: dict[str, StateflowWorker]
-            operator, partition, dns = message
-            operator.set_dns(dns)
+            operator, partition = message
             if operator.name in registered_operators:
                 registered_operators[operator.name].update({partition: operator})
+                attach_state_to_operator(registered_operators[operator.name][partition])
                 operator_queues[operator.name].update({partition: PriorityQueue()})
             else:
                 registered_operators[operator.name] = {partition: operator}
+                attach_state_to_operator(registered_operators[operator.name][partition])
                 operator_queues[operator.name] = {partition: PriorityQueue()}
             logging.info(f'Registered operators: {registered_operators}')
         else:
@@ -56,6 +68,8 @@ async def process_queue():
                 while not q.empty():
                     queue_value = await q.get()
                     timestamp, function_name, params = queue_value
+                    logging.debug(f'Running function {function_name} with params {params} at {timestamp}')
+                    registered_operators[operator_name][partition].set_function_timestamp(function_name, timestamp)
                     await registered_operators[operator_name][partition].run_function(function_name, *params)
         await sleep(INTERNAL_WATERMARK_SECONDS)
 
