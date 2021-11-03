@@ -10,10 +10,17 @@ services:
       - UNIVERSALIS_HOST=coordinator
       - UNIVERSALIS_PORT=8888
       - PYTHONUNBUFFERED=TRUE
-    ports:
-      - "5000:5000"
     depends_on:
       - coordinator
+
+  frontend-load-balancer:
+    image: nginx:latest
+    volumes:
+      - ./frontend_nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - frontend
+    ports:
+      - "5000:5000"
 
   ingress:
     build:

@@ -21,17 +21,17 @@ universalis = Universalis(UNIVERSALIS_HOST, UNIVERSALIS_PORT)
 g = StateflowGraph('shopping-cart')
 ####################################################################################################################
 
-user_operator = Operator('user', partitions=2, operator_state_backend=LocalStateBackend.REDIS)
+user_operator = Operator('user', partitions=3, operator_state_backend=LocalStateBackend.REDIS)
 user_operator.register_stateful_functions(user.CreateUser(), user.AddCredit(), user.SubtractCredit())
 g.add_operator(user_operator)
 ####################################################################################################################
 
-stock_operator = Operator('stock', partitions=2, operator_state_backend=LocalStateBackend.REDIS)
+stock_operator = Operator('stock', partitions=3, operator_state_backend=LocalStateBackend.REDIS)
 stock_operator.register_stateful_functions(stock.CreateItem(), stock.AddStock(), stock.SubtractStock())
 g.add_operator(stock_operator)
 ####################################################################################################################
 
-order_operator = Operator('order', partitions=2, operator_state_backend=LocalStateBackend.REDIS)
+order_operator = Operator('order', partitions=3, operator_state_backend=LocalStateBackend.REDIS)
 order_operator.register_stateful_functions(order.CreateOrder(), order.AddItem(), order.Checkout())
 g.add_operator(order_operator)
 ####################################################################################################################

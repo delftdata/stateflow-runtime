@@ -3,7 +3,7 @@ import random
 
 from locust import HttpUser, SequentialTaskSet, between, task, constant
 
-FRONTEND_URL = 'http://frontend:5000'
+FRONTEND_URL = 'http://frontend-load-balancer'
 
 
 def create_user(session):
@@ -125,7 +125,7 @@ class LoadTest2(SequentialTaskSet):
 
 
 class MicroservicesUser(HttpUser):
-    wait_time = between(1, 3)  # how much time a user waits (seconds) to run another TaskSequence
+    wait_time = between(0, 1)  # how much time a user waits (seconds) to run another TaskSequence
     # wait_time = constant(1)
     # [SequentialTaskSet]: [weight of the SequentialTaskSet]
     tasks = {
