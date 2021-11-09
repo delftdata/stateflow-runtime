@@ -8,6 +8,7 @@ setuptools.setup(
     install_requires=[
         'cloudpickle>=2.0.0>,<3.0.0',
         'msgpack>=1.0.0,<2.0.0',
+        'websockets==10.0'
     ],
     python_requires='>=3.7',
 )

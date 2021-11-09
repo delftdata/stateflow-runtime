@@ -2,4 +2,4 @@
 
 set -m
 
-exec python discovery/discovery.py
+exec python discovery/discovery_protocol.py
