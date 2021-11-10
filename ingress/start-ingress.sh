@@ -2,4 +2,4 @@
 
 set -m
 
-exec python ingress/ingress_protocol.py
+exec python ingress/ingress.py

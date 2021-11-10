@@ -1,125 +1,106 @@
-import asyncio
-from socket import socket, AF_INET, SOCK_STREAM
-from websockets import connect
-
+import struct
+import socket
 import cloudpickle
 
-from universalis.common.logging import logging
-from universalis.common.serialization import msgpack_serialization, msgpack_deserialization
-
-BUFFER_SIZE = 4096  # in bytes
+from .logging import logging
+from .serialization import Serializer, msgpack_deserialization, msgpack_serialization
 
 
-def receive_entire_message_from_socket(s: socket) -> bytes:
-    fragments = []
-    while True:
-        chunk = s.recv(BUFFER_SIZE)
-        if not chunk:
+class NetworkingManager:
+
+    def __init__(self):
+        self.open_socket_connections: dict[tuple[str, int], socket.socket] = {}
+
+    def create_socket_connection(self, host: str, port):
+        s = None
+        for res in socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM):
+            af, socktype, proto, canonname, sa = res
+            try:
+                s = socket.socket(af, socktype, proto)
+            except OSError:
+                s = None
+                continue
+            try:
+                s.connect(sa)
+            except OSError:
+                s.close()
+                s = None
+                continue
             break
-        fragments.append(chunk)
-    return b''.join(fragments)
+        if s is None:
+            logging.error(f'Could not open socket for host: {host}:{port}')
+        else:
+            self.open_socket_connections[(host, port)] = s
+
+    def close_socket_connection(self, host: str, port: int):
+        if (host, port) in self.open_socket_connections:
+            self.open_socket_connections[(host, port)].close()
+
+    def send_message(self, host, port, msg: object, serializer: Serializer = Serializer.CLOUDPICKLE):
+        sock = self.open_socket_connections[(host, port)]
+        msg = encode_message(msg, serializer)
+        try:
+            sock.sendall(msg)
+        except BrokenPipeError:
+            self.close_socket_connection(host, port)
+            self.create_socket_connection(host, port)
+            self.open_socket_connections[(host, port)].sendall(msg)
+
+    def receive_message(self, host, port):
+        sock = self.open_socket_connections[(host, port)]
+        # Read message length and unpack it into an integer
+        raw_serializer = self.__receive_all(sock, 2)
+        raw_message_len = self.__receive_all(sock, 4)
+        if not raw_message_len or not raw_serializer:
+            return None
+        serializer = struct.unpack('>H', raw_serializer)[0]
+        message_len = struct.unpack('>I', raw_message_len)[0]
+        # Read the message data
+        if serializer == 0:
+            return cloudpickle.loads(self.__receive_all(sock, message_len))
+        elif serializer == 1:
+            return msgpack_deserialization(self.__receive_all(sock, message_len))
+        else:
+            logging.error(f'Serializer is not supported')
+
+    @staticmethod
+    def __receive_all(sock, n):
+        # Helper function to receive n bytes or return None if EOF is hit
+        data = bytearray()
+        while len(data) < n:
+            packet = sock.recv(n - len(data))
+            if not packet:
+                return None
+            data.extend(packet)
+        return data
 
 
-def transmit_tcp_request_response(host: str, port: int, message: object) -> object:
-    try:
-        with socket(AF_INET, SOCK_STREAM) as s:
-            s.connect((host, port))
-            s.setblocking(False)
-            logging.debug(f"REQ RESP Target machine: {host}:{port} message: {message}")
-            s.sendall(msgpack_serialization({"__COM_TYPE__": "REQ_RESP", "__MSG__": message}))
-            return msgpack_deserialization(receive_entire_message_from_socket(s))
-    except ConnectionRefusedError:
-        logging.error(f"Failed to connect to server {host}:{port}")
-
-
-def transmit_tcp_no_response(host: str, port: int, message: object, com_type: str = "NO_RESP") -> None:
-    try:
-        with socket(AF_INET, SOCK_STREAM) as s:
-            s.connect((host, port))
-            s.setblocking(False)
-            if com_type == "NO_RESP":
-                logging.debug(f"NO RESP Target machine: {host}:{port} message: {message}")
-                s.sendall(msgpack_serialization({"__COM_TYPE__": "NO_RESP", "__MSG__": message}))
-            elif com_type == "GET_PEERS":
-                s.sendall(msgpack_serialization({"__COM_TYPE__": "GET_PEERS", "__MSG__": message}))
-            elif com_type == "INVOKE_LOCAL":
-                s.sendall(msgpack_serialization({"__COM_TYPE__": "INVOKE_LOCAL", "__MSG__": message}))
-            elif com_type == "RUN_FUN":
-                s.sendall(cloudpickle.dumps({"__COM_TYPE__": "RUN_FUN", "__MSG__": message}))
-            elif com_type == "RECEIVE_EXE_PLN":
-                message: bytes
-                s.sendall(cloudpickle.dumps({"__COM_TYPE__": "RECEIVE_EXE_PLN", "__MSG__": message}))
-            elif com_type == "REGISTER_OPERATOR_INGRESS":
-                s.sendall(msgpack_serialization({"__COM_TYPE__": "REGISTER_OPERATOR_INGRESS", "__MSG__": message}))
-            elif com_type == "REGISTER_OPERATOR":
-                s.sendall(cloudpickle.dumps({"__COM_TYPE__": "REGISTER_OPERATOR", "__MSG__": message}))
-            else:
-                logging.error(f"Invalid communication type: {com_type}")
-    except ConnectionRefusedError:
-        logging.error(f"Failed to connect to server {host}:{port}")
-
-
-async def async_transmit_tcp_no_response(host: str, port: int, message: object, com_type: str = "NO_RESP") -> None:
-    _, writer = await asyncio.open_connection(host, port)
-    if com_type in ["NO_RESP", "INVOKE_LOCAL", "REGISTER_OPERATOR_DISCOVERY", "REMOTE_FUN_CALL"]:
-        writer.write(msgpack_serialization({"__COM_TYPE__": com_type, "__MSG__": message}))
-    elif com_type in ["RUN_FUN", "RECEIVE_EXE_PLN", "REGISTER_OPERATOR"]:
-        writer.write(cloudpickle.dumps({"__COM_TYPE__": com_type, "__MSG__": message}))
+def encode_message(msg: object, serializer: Serializer):
+    if serializer == Serializer.CLOUDPICKLE:
+        msg = cloudpickle.dumps(msg)
+        msg = struct.pack('>H', 0) + struct.pack('>I', len(msg)) + msg
+        return msg
+    elif serializer == Serializer.MSGPACK:
+        msg = msgpack_serialization(msg)
+        msg = struct.pack('>H', 1) + struct.pack('>I', len(msg)) + msg
+        return msg
     else:
-        logging.error(f"Invalid communication type: {com_type}")
-    await writer.drain()
-    writer.close()
-    await writer.wait_closed()
+        logging.error(f'Serializer: {serializer} is not supported')
+        return None
 
 
-async def async_transmit_tcp_request_response(host: str, port: int, message: object, com_type: str = "REQ_RESP"):
-    reader, writer = await asyncio.open_connection(host, port)
-    logging.debug(f"REQ RESP Target machine: {host}:{port} message: {message}")
-    writer.write(msgpack_serialization({"__COM_TYPE__": com_type, "__MSG__": message}))
-    await writer.drain()
-    writer.write_eof()
-    data = await reader.read()
-    writer.close()
-    await writer.wait_closed()
-    return msgpack_deserialization(data)
-
-
-async def async_transmit_websocket_no_response_new_connection(host: str,
-                                                              port: int,
-                                                              message: object,
-                                                              com_type: str = "NO_RESP"):
-    async with connect(f"ws://{host}:{port}") as websocket:
-        if com_type in ["NO_RESP", "INVOKE_LOCAL", "REGISTER_OPERATOR_DISCOVERY", "REMOTE_FUN_CALL"]:
-            serialized_message = msgpack_serialization({"__COM_TYPE__": com_type, "__MSG__": message})
-        elif com_type in ["RUN_FUN", "RECEIVE_EXE_PLN", "REGISTER_OPERATOR"]:
-            serialized_message = cloudpickle.dumps({"__COM_TYPE__": com_type, "__MSG__": message})
-            logging.error(f"Invalid communication type: {com_type}")
-        await websocket.send(serialized_message)
-
-
-async def async_transmit_websocket_request_response_new_connection(host: str,
-                                                                   port: int,
-                                                                   message: object,
-                                                                   com_type: str = "REQ_RESP"):
-    async with connect(f"ws://{host}:{port}") as websocket:
-        serialized_message = msgpack_serialization({"__COM_TYPE__": com_type, "__MSG__": message})
-        await websocket.send(serialized_message)
-        return msgpack_deserialization(await websocket.recv())
-
-
-class UniversalisClientProtocol(asyncio.Protocol):
-    def __init__(self, message, on_con_lost):
-        self.message = message
-        self.on_con_lost = on_con_lost
-
-    def connection_made(self, transport):
-        request = self.message.encode()
-        transport.write(request)
-        print('Data sent: {!r}'.format(self.message))
-
-    def data_received(self, data):
-        response = data.decode()
-
-    def connection_lost(self, exc):
-        print('The server closed the connection')
-        self.on_con_lost.set_result(True)
+def decode_messages(data):
+    while 1:
+        serializer = struct.unpack('>H', data[0:2])[0]
+        message_len = struct.unpack('>I', data[2:6])[0]
+        packet_len = message_len + 6
+        msg = data[6:packet_len]
+        if serializer == 0:
+            yield cloudpickle.loads(msg)
+        elif serializer == 1:
+            yield msgpack_deserialization(msg)
+        else:
+            logging.error(f'Serializer is not supported')
+        data = data[packet_len:]
+        if len(data) == 0:
+            break

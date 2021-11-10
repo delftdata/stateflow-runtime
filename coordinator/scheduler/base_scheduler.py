@@ -9,18 +9,6 @@ class BaseScheduler(ABC):
     @staticmethod
     @abstractmethod
     async def schedule(workers: list[StateflowWorker],
-                       execution_graph: StateflowGraph):
-        raise NotImplementedError
-
-    @staticmethod
-    @abstractmethod
-    async def schedule_websockets(workers: list[StateflowWorker],
-                                  execution_graph: StateflowGraph):
-        raise NotImplementedError
-
-    @staticmethod
-    @abstractmethod
-    def schedule_protocol(workers: list[StateflowWorker],
-                          execution_graph: StateflowGraph,
-                          network_manager):
+                       execution_graph: StateflowGraph,
+                       network_manager):
         raise NotImplementedError
