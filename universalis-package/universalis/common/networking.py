@@ -9,9 +9,10 @@ from .serialization import Serializer, msgpack_deserialization, msgpack_serializ
 class NetworkingManager:
 
     def __init__(self):
-        self.open_socket_connections: dict[tuple[str, int], socket.socket] = {}
+        self.open_socket_connections: dict[tuple[str, int, str, str], socket.socket] = {}
 
-    def create_socket_connection(self, host: str, port):
+    @staticmethod
+    def create_socket_connection(host: str, port) -> socket.socket:
         s = None
         for res in socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM):
             af, socktype, proto, canonname, sa = res
@@ -30,38 +31,83 @@ class NetworkingManager:
         if s is None:
             logging.error(f'Could not open socket for host: {host}:{port}')
         else:
-            self.open_socket_connections[(host, port)] = s
+            return s
 
-    def close_socket_connection(self, host: str, port: int):
-        if (host, port) in self.open_socket_connections:
-            self.open_socket_connections[(host, port)].close()
+    def close_socket_connection(self, host: str, port: int, operator_name: str, function_name: str):
 
-    def send_message(self, host, port, msg: object, serializer: Serializer = Serializer.CLOUDPICKLE):
-        sock = self.open_socket_connections[(host, port)]
+        if (host, port, operator_name, function_name) in self.open_socket_connections:
+            self.open_socket_connections[(host, port, operator_name, function_name)].close()
+            del self.open_socket_connections[(host, port, operator_name, function_name)]
+        else:
+            logging.warning('The socket that you are trying to close does not exist')
+
+    def send_message(self,
+                     host,
+                     port,
+                     operator_name,
+                     function_name,
+                     msg: object,
+                     serializer: Serializer = Serializer.CLOUDPICKLE,
+                     tmp_socket: socket.socket = None):
+        if tmp_socket is None:
+            if (host, port, operator_name, function_name) not in self.open_socket_connections:
+                self.open_socket_connections[(host, port, operator_name, function_name)] = self.create_socket_connection(host, port)
+            sock = self.open_socket_connections[(host, port, operator_name, function_name)]
+        else:
+            sock = tmp_socket
         msg = encode_message(msg, serializer)
         try:
             sock.sendall(msg)
         except BrokenPipeError:
-            self.close_socket_connection(host, port)
-            self.create_socket_connection(host, port)
-            self.open_socket_connections[(host, port)].sendall(msg)
+            if tmp_socket is None:
+                self.close_socket_connection(host, port, operator_name, function_name)
+                self.open_socket_connections[(host, port, operator_name, function_name)] = self.create_socket_connection(host, port)
+                self.open_socket_connections[(host, port, operator_name, function_name)].sendall(msg)
+            else:
+                tmp_socket.close()
+                sock = self.create_socket_connection(host, port)
+                sock.sendall(msg)
 
-    def receive_message(self, host, port):
-        sock = self.open_socket_connections[(host, port)]
+    def receive_message(self, host, port, operator_name, function_name, tmp_socket: socket.socket = None):
+
+        # logging.warning(f'(N)  RCV M -> 1')
+        if tmp_socket is None:
+            sock = self.open_socket_connections[(host, port, operator_name, function_name)]
+        else:
+            sock = tmp_socket
         # Read message length and unpack it into an integer
         raw_serializer = self.__receive_all(sock, 2)
+        # logging.warning(f'(N)  RCV M -> 2')
         raw_message_len = self.__receive_all(sock, 4)
+        # logging.warning(f'(N)  RCV M -> 3')
         if not raw_message_len or not raw_serializer:
             return None
         serializer = struct.unpack('>H', raw_serializer)[0]
         message_len = struct.unpack('>I', raw_message_len)[0]
         # Read the message data
         if serializer == 0:
+            # logging.warning(f'(N)  RCV M -> 4')
             return cloudpickle.loads(self.__receive_all(sock, message_len))
         elif serializer == 1:
+            # logging.warning(f'(N)  RCV M -> 4')
             return msgpack_deserialization(self.__receive_all(sock, message_len))
         else:
             logging.error(f'Serializer is not supported')
+
+    def send_message_request_response(self,
+                                      host,
+                                      port,
+                                      operator_name,
+                                      function_name,
+                                      msg: object,
+                                      serializer: Serializer = Serializer.CLOUDPICKLE):
+        logging.warning(msg)
+        logging.warning(f'(N) -> 1')
+        self.send_message(host, port, operator_name, function_name, msg, serializer=serializer)
+        logging.warning(f'(N) -> 2')
+        response = self.receive_message(host, port, operator_name, function_name)
+        logging.warning(f'(N) -> 3')
+        return response
 
     @staticmethod
     def __receive_all(sock, n):

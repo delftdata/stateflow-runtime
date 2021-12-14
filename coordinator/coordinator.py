@@ -18,8 +18,10 @@ class Coordinator:
                         StateflowWorker("worker-2", 8888)]
         self.network_manager = NetworkingManager()
 
-    def submit_stateflow_graph(self, stateflow_graph: StateflowGraph, scheduler_type=None):
+    def submit_stateflow_graph(self,
+                               stateflow_graph: StateflowGraph,
+                               scheduler_type=None) -> dict[dict[str, tuple[str, int]]]:
         if not isinstance(stateflow_graph, StateflowGraph):
             raise NotAStateflowGraph
         scheduler = RoundRobin()
-        scheduler.schedule(self.workers, stateflow_graph, self.network_manager)
+        return scheduler.schedule(self.workers, stateflow_graph, self.network_manager)

@@ -2,7 +2,8 @@ import asyncio
 import uvloop
 
 from universalis.common.logging import logging
-from universalis.common.networking import decode_messages
+from universalis.common.networking import decode_messages, encode_message
+from universalis.common.serialization import Serializer
 
 from coordinator import Coordinator
 
@@ -20,6 +21,7 @@ class CoordinatorServerProtocol(asyncio.Protocol):
         self.transport = transport
 
     def data_received(self, data):
+        global operator_partition_locations
         deserialized_data: dict
         for deserialized_data in decode_messages(data):
             if '__COM_TYPE__' not in deserialized_data:
@@ -30,7 +32,10 @@ class CoordinatorServerProtocol(asyncio.Protocol):
                 if message_type == 'SEND_EXECUTION_GRAPH':
                     # Received execution graph from a universalis client
                     coordinator = Coordinator()
-                    coordinator.submit_stateflow_graph(message)
+                    operator_partition_locations = coordinator.submit_stateflow_graph(message)
+                elif message_type == 'DISCOVER':
+                    reply = encode_message(operator_partition_locations, Serializer.MSGPACK)
+                    self.transport.write(reply)
                 else:
                     logging.error(f"COORDINATOR SERVER: Non supported message type: {message_type}")
 
@@ -44,5 +49,6 @@ async def main():
         await server.serve_forever()
 
 if __name__ == "__main__":
+    operator_partition_locations: dict[dict[str, tuple[str, int]]] = {}
     uvloop.install()
     asyncio.run(main())

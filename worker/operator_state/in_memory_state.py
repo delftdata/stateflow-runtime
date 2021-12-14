@@ -41,3 +41,6 @@ class InMemoryOperatorState(BaseOperatorState):
                 self.key_locks[key].release()
         except KeyError:
             logging.warning(f'Key: {key} does not exist')
+
+    async def exists(self, key):
+        return True if key in self.data else False

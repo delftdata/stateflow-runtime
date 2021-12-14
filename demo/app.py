@@ -1,5 +1,4 @@
 import os
-import time
 import uuid
 
 from flask import Flask, jsonify, Response
@@ -43,8 +42,6 @@ g.add_connection(order_operator, stock_operator, bidirectional=True)
 # SUBMIT STATEFLOW GRAPH ###########################################################################################
 ####################################################################################################################
 
-time.sleep(2)
-
 universalis.submit(g, user, order, stock)
 
 
@@ -61,7 +58,7 @@ def create_user():
 
 @app.post('/user/add_credit/<user_key>/<amount>')
 def add_credit(user_key: str, amount: int):
-    universalis.send_tcp_event(user_operator, user_key, user.AddCredit(), (user_key, amount))
+    universalis.send_tcp_event(user_operator, user_key, user.AddCredit(), (user_key, int(amount)))
     return Response('Credit added', status=200)
 
 
@@ -76,7 +73,7 @@ def create_item():
 
 @app.post('/stock/add_stock/<item_key>/<amount>')
 def add_stock(item_key: str, amount: int):
-    universalis.send_tcp_event(stock_operator, item_key, stock.AddStock(), (item_key, amount))
+    universalis.send_tcp_event(stock_operator, item_key, stock.AddStock(), (item_key, int(amount)))
     return jsonify({'item_key': item_key})
 
 

@@ -1,6 +1,6 @@
 # networking service
 uvloop==0.16.0
-msgpack==1.0.2
+msgpack==1.0.3
 cloudpickle==2.0.0
 # monitoring service
 psutil==5.8.0

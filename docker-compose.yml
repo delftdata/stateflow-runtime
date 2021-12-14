@@ -27,7 +27,7 @@ services:
       context: .
       dockerfile: ingress/ingress.Dockerfile
     environment:
-      - DISCOVERY_HOST=discovery
+      - DISCOVERY_HOST=coordinator
       - DISCOVERY_PORT=8888
     image: dev/universalis-ingress:latest
 
@@ -40,21 +40,10 @@ services:
     ports:
       - "4000:4000"
 
-  discovery:
-    build:
-      context: .
-      dockerfile: discovery/discovery.Dockerfile
-    image: dev/universalis-discovery:latest
-    ports:
-      - "8885:8888"
-
   coordinator:
     build:
       context: .
       dockerfile: coordinator/coordinator.dockerfile
-    environment:
-      - DISCOVERY_HOST=discovery
-      - DISCOVERY_PORT=8888
     image: dev/universalis-coordinator:latest
     ports:
       - "8886:8888"
@@ -67,7 +56,7 @@ services:
     environment:
       - OWN_ADDRESS_NAME=worker-0
       - OWN_PORT=8887
-      - DISCOVERY_HOST=discovery
+      - DISCOVERY_HOST=coordinator
       - DISCOVERY_PORT=8888
     ports:
       - "8887:8888"
@@ -80,7 +69,7 @@ services:
     environment:
       - OWN_ADDRESS_NAME=worker-1
       - OWN_PORT=8888
-      - DISCOVERY_HOST=discovery
+      - DISCOVERY_HOST=coordinator
       - DISCOVERY_PORT=8888
     ports:
       - "8888:8888"
@@ -93,7 +82,7 @@ services:
     environment:
       - OWN_ADDRESS_NAME=worker-2
       - OWN_PORT=8889
-      - DISCOVERY_HOST=discovery
+      - DISCOVERY_HOST=coordinator
       - DISCOVERY_PORT=8888
     ports:
       - "8889:8888"

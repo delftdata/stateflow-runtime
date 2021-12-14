@@ -4,7 +4,7 @@ from universalis.common.operator import StatefulFunction
 class CreateItem(StatefulFunction):
     async def run(self, key: str, name: str, price: int):
         await self.state.put(key, {'name': name, 'price': price, 'stock': 0})
-        return key
+        # return key
 
 
 class AddStock(StatefulFunction):
@@ -19,3 +19,4 @@ class SubtractStock(StatefulFunction):
         item_data = await self.state.get(key)
         item_data['stock'] -= stock
         await self.state.put(key, item_data)
+        return item_data

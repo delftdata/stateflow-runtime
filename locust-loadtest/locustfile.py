@@ -16,7 +16,8 @@ def create_user(session):
 
 
 def add_balance_to_user(session):
-    balance_to_add: float = random.uniform(10000.0, 100000.0)
+    # balance_to_add: float = random.uniform(10000.0, 100000.0)
+    balance_to_add = 1000
     session.client.post(f"{FRONTEND_URL}/user/add_credit/{session.user_key}/{balance_to_add}",
                         name="/user/add_credit/[user_key]/[amount]")
 
@@ -33,7 +34,8 @@ def create_item(session):
 
 
 def add_stock(session, item_idx: int):
-    stock_to_add = random.randint(100, 1000)
+    # stock_to_add = random.randint(100, 1000)
+    stock_to_add = 100
     session.client.post(f"{FRONTEND_URL}/stock/add_stock/{session.item_keys[item_idx]}/{stock_to_add}",
                         name="/stock/add_stock/[item_key]/[amount]")
 

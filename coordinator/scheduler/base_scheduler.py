@@ -10,5 +10,5 @@ class BaseScheduler(ABC):
     @abstractmethod
     async def schedule(workers: list[StateflowWorker],
                        execution_graph: StateflowGraph,
-                       network_manager):
+                       network_manager) -> dict[dict[str, tuple[str, int]]]:
         raise NotImplementedError

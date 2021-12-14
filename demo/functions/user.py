@@ -4,7 +4,7 @@ from universalis.common.operator import StatefulFunction
 class CreateUser(StatefulFunction):
     async def run(self, key: str, name: str):
         await self.state.put(key, {'name': name, 'credit': 0})
-        return key
+        # return key
 
 
 class AddCredit(StatefulFunction):
