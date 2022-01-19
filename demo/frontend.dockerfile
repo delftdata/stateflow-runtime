@@ -17,7 +17,7 @@ COPY --chown=universalis demo .
 ENV PYTHONPATH /usr/local/universalis
 
 USER universalis
-CMD ["gunicorn", "-b", "0.0.0.0:5000", "app:app", "--timeout", "10", "-w", "2"]
+CMD ["hypercorn", "-b", "0.0.0.0:5000", "app:app", "-w", "1"]
 
 # default flask port
 EXPOSE 5000

@@ -36,14 +36,12 @@ def make_key_hashable(key):
 class StatefulFunction(Function):
 
     state: State
-    request_response_store: State
     networking: NetworkingManager
 
     def __init__(self):
         super().__init__()
         self.dns: dict[dict[str, tuple[str, int]]] = {}
         self.timestamp = None
-        self.remote_calls = []
 
     async def __call__(self, *args, **kwargs):
         if self.state is None:
@@ -53,11 +51,11 @@ class StatefulFunction(Function):
         except TypeError:
             pass
 
-    def call_remote_function_no_response(self, operator_name, function_name, key, params):
-        # logging.warning(f"DNS: {self.dns}")
+    async def call_remote_function_no_response(self, operator_name, function_name, key, params):
+
         if operator_name not in self.dns:
             logging.warning(f"Couldn't find operator: {operator_name}")
-            self.__call_discovery()
+            await self.__call_discovery()
 
         partition: str = str(int(make_key_hashable(key)) % len(self.dns[operator_name].keys()))
 
@@ -70,18 +68,18 @@ class StatefulFunction(Function):
 
         operator_host, operator_port = self.dns[operator_name][partition][0], self.dns[operator_name][partition][1]
 
-        self.networking.send_message(operator_host,
-                                     operator_port,
-                                     operator_name,
-                                     function_name,
-                                     {"__COM_TYPE__": 'RUN_FUN', "__MSG__": payload},
-                                     Serializer.MSGPACK)
+        await self.networking.send_message(operator_host,
+                                           operator_port,
+                                           operator_name,
+                                           function_name,
+                                           {"__COM_TYPE__": 'RUN_FUN', "__MSG__": payload},
+                                           Serializer.MSGPACK)
 
-    def call_remote_function_request_response(self, operator_name, function_name, key, params):
+    async def call_remote_function_request_response(self, operator_name, function_name, key, params):
         # logging.warning(f"DNS: {self.dns}")
         if operator_name not in self.dns:
             logging.warning(f"Couldn't find operator: {operator_name} in {self.dns}")
-            self.__call_discovery()
+            await self.__call_discovery()
 
         partition: str = str(int(make_key_hashable(key)) % len(self.dns[operator_name].keys()))
 
@@ -95,17 +93,16 @@ class StatefulFunction(Function):
         operator_host, operator_port = self.dns[operator_name][partition][0], self.dns[operator_name][partition][1]
         logging.warning(f'(SF)  Start {operator_host}:{operator_port} of {operator_name}:{partition}')
 
-        resp = self.networking.send_message_request_response(operator_host,
-                                                             operator_port,
-                                                             operator_name,
-                                                             function_name,
-                                                             {"__COM_TYPE__": 'RUN_FUN_RQ_RS', "__MSG__": payload},
-                                                             Serializer.MSGPACK)
+        resp = await self.networking.send_message_request_response(operator_host,
+                                                                   operator_port,
+                                                                   operator_name,
+                                                                   function_name,
+                                                                   {"__COM_TYPE__": 'RUN_FUN_RQ_RS', "__MSG__": payload},
+                                                                   Serializer.MSGPACK)
         return resp
 
-    def attach_state(self, operator_state: State, request_response_store: State):
+    def attach_state(self, operator_state: State):
         self.state = operator_state
-        self.request_response_store = request_response_store
 
     def attach_networking(self, networking):
         self.networking = networking
@@ -115,17 +112,14 @@ class StatefulFunction(Function):
 
     def set_dns(self, dns):
         self.dns = dns
-        # logging.warning(f"SETTING DNS TO: {self.dns}")
 
-    def __call_discovery(self):
+    async def __call_discovery(self):
         discovery_host, discovery_port = os.environ['DISCOVERY_HOST'], int(os.environ['DISCOVERY_PORT'])
-        self.networking.send_message(discovery_host,
-                                     discovery_port,
-                                     "",
-                                     ({"__COM_TYPE__": "DISCOVER", "__MSG__": ""}),
-                                     Serializer.MSGPACK)
-        # logging.warning(f'(SF) DISC')
-        self.dns = self.networking.receive_message(discovery_host, discovery_port, "")
+        self.dns = await self.networking.send_message_request_response(discovery_host,
+                                                                       discovery_port,
+                                                                       "",
+                                                                       ({"__COM_TYPE__": "DISCOVER", "__MSG__": ""}),
+                                                                       Serializer.MSGPACK)
 
     @abstractmethod
     async def run(self, *args):

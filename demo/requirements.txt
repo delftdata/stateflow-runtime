@@ -1,5 +1,8 @@
-Flask==2.0.2
+quart==0.16.2
+hypercorn==0.13.2
+#
 cloudpickle==2.0.0
 msgpack==1.0.3
-# production grade WSGI server
-gunicorn==20.1.0
+#
+aiozmq==0.9.0
+pyzmq==22.3.0
