@@ -11,10 +11,10 @@ class NotAStateflowGraph(Exception):
 class Coordinator:
 
     def __init__(self):
-        # TODO get workers and ingresses dynamically
-        self.workers = [StateflowWorker("worker-0", 8888),
-                        StateflowWorker("worker-1", 8888),
-                        StateflowWorker("worker-2", 8888)]
+        self.workers = []
+
+    def register_worker(self, worker_ip: str):
+        self.workers.append(StateflowWorker(worker_ip, 8888))
 
     async def submit_stateflow_graph(self,
                                      network_manager,

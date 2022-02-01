@@ -15,9 +15,8 @@ SERVER_PORT = 8888
 operator_partition_locations: dict[dict[str, tuple[str, int]]] = {}
 
 
-async def schedule_operators(networking, message):
+async def schedule_operators(coordinator, networking, message):
     global operator_partition_locations
-    coordinator = Coordinator()
     operator_partition_locations = await coordinator.submit_stateflow_graph(networking,
                                                                             message)
 
@@ -27,6 +26,7 @@ async def main():
     router = await aiozmq.create_zmq_stream(zmq.ROUTER, bind=f"tcp://0.0.0.0:{SERVER_PORT}")  # coordinator
     scheduler = await aiojobs.create_scheduler(limit=None)
     networking = NetworkingManager()
+    coordinator = Coordinator()
     logging.info(f"Coordinator Server listening at 0.0.0.0:{SERVER_PORT}")
     while True:
         resp_adr, data = await router.read()
@@ -38,13 +38,16 @@ async def main():
             message = deserialized_data['__MSG__']
             if message_type == 'SEND_EXECUTION_GRAPH':
                 # Received execution graph from a universalis client
-                await scheduler.spawn(schedule_operators(networking, message))
+                await scheduler.spawn(schedule_operators(coordinator, networking, message))
                 logging.info(f"Submitted Stateflow Graph to Workers")
             elif message_type == 'DISCOVER':
                 logging.info(f"DISCOVERY REQUEST RECEIVED")
                 reply = networking.encode_message(operator_partition_locations, Serializer.MSGPACK)
                 router.write((resp_adr, reply))
                 logging.info(f"DISCOVERY RESPONSE {reply}")
+            elif message_type == 'REGISTER_WORKER':
+                coordinator.register_worker(message)
+                logging.info(f"Worker registered {message}")
             else:
                 logging.error(f"COORDINATOR SERVER: Non supported message type: {message_type}")
 

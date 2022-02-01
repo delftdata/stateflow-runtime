@@ -68,6 +68,7 @@ class NetworkingManager:
         async with self.locks[(host, port, operator_name, function_name)]:
             await self.send_message(host, port, operator_name, function_name, msg, serializer)
             resp = await self.__receive_message(host, port, operator_name, function_name)
+            logging.warning("NETWORKING MODULE RECEIVED RESPONSE")
             return resp
 
     @staticmethod

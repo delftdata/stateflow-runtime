@@ -48,44 +48,14 @@ services:
     ports:
       - "8886:8888"
 
-  worker-0:
+  worker:
     build:
       context: .
       dockerfile: worker/worker.dockerfile
     image: dev/universalis:latest
     environment:
-      - OWN_ADDRESS_NAME=worker-0
-      - OWN_PORT=8887
       - DISCOVERY_HOST=coordinator
       - DISCOVERY_PORT=8888
-    ports:
-      - "8887:8888"
-
-  worker-1:
-    build:
-      context: .
-      dockerfile: worker/worker.dockerfile
-    image: dev/universalis:latest
-    environment:
-      - OWN_ADDRESS_NAME=worker-1
-      - OWN_PORT=8888
-      - DISCOVERY_HOST=coordinator
-      - DISCOVERY_PORT=8888
-    ports:
-      - "8888:8888"
-
-  worker-2:
-    build:
-      context: .
-      dockerfile: worker/worker.dockerfile
-    image: dev/universalis:latest
-    environment:
-      - OWN_ADDRESS_NAME=worker-2
-      - OWN_PORT=8889
-      - DISCOVERY_HOST=coordinator
-      - DISCOVERY_PORT=8888
-    ports:
-      - "8889:8888"
 
 # LOCUST
 

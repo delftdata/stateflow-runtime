@@ -1,5 +1,6 @@
 import asyncio
 import os
+import socket
 
 import aiojobs
 import aiozmq
@@ -35,7 +36,7 @@ async def main():
     router = await aiozmq.create_zmq_stream(zmq.ROUTER, bind=f"tcp://0.0.0.0:{SERVER_PORT}")  # coordinator
     scheduler = await aiojobs.create_scheduler(limit=None)
     networking_manager: NetworkingManager = NetworkingManager()
-    logging.info(f"Ingress Server listening at 0.0.0.0:{SERVER_PORT}")
+    logging.info(f"Ingress Server listening at 0.0.0.0:{SERVER_PORT} IP:{socket.gethostbyname(socket.gethostname())}")
     while True:
         resp_adr, data = await router.read()
         deserialized_data: dict = networking_manager.decode_message(data)

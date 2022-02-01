@@ -105,25 +105,25 @@ class LoadTest2(SequentialTaskSet):
         self.on_start()
 
     @task
-    def admin_creates_item(self): create_item(self)
+    def admin_creates_item(self): create_item(self)  # stock service
 
     @task
-    def admin_adds_stock_to_item(self): add_stock(self, 0)
+    def admin_adds_stock_to_item(self): add_stock(self, 0)  # stock service
 
     @task
-    def user_creates_account(self): create_user(self)
+    def user_creates_account(self): create_user(self)  # user service
 
     @task
-    def user_adds_balance(self): add_balance_to_user(self)
+    def user_adds_balance(self): add_balance_to_user(self)  # user service
 
     @task
-    def user_creates_order(self): create_order(self)
+    def user_creates_order(self): create_order(self)  # order
 
     @task
-    def user_adds_item_to_order(self): add_item_to_order(self, 0)
+    def user_adds_item_to_order(self): add_item_to_order(self, 0)  # order
 
     @task
-    def user_checks_out_order(self): checkout_order(self)
+    def user_checks_out_order(self): checkout_order(self)  # order
 
 
 class MicroservicesUser(HttpUser):

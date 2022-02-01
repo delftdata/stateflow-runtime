@@ -1,5 +1,6 @@
 import asyncio
 import os
+import time
 import uuid
 
 from quart import Quart, jsonify, Response
@@ -42,6 +43,8 @@ g.add_connection(order_operator, stock_operator, bidirectional=True)
 ####################################################################################################################
 # SUBMIT STATEFLOW GRAPH ###########################################################################################
 ####################################################################################################################
+
+time.sleep(3)
 
 asyncio.run(universalis.submit(g, user, order, stock))
 

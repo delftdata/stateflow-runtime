@@ -31,7 +31,7 @@ class Checkout(StatefulFunction):
 
             total_cost += item['quantity'] * item['cost']
             # call user operator to subtract credit
-            await self.call_remote_function_no_response(operator_name='user',
-                                                        function_name='SubtractCredit',
-                                                        key=order_data['user_key'],
-                                                        params=(order_data['user_key'], total_cost))
+        await self.call_remote_function_no_response(operator_name='user',
+                                                    function_name='SubtractCredit',
+                                                    key=order_data['user_key'],
+                                                    params=(order_data['user_key'], total_cost))
