@@ -15,15 +15,14 @@ class Operator(BaseOperator):
 
     def __init__(self,
                  name: str,
-                 partitions: int = 1,
+                 n_partitions: int = 1,
                  operator_state_backend: LocalStateBackend = LocalStateBackend.DICT):
-        super().__init__(name)
+        super().__init__(name, n_partitions)
         self.state = None
         self.networking = None
         self.operator_state_backend: LocalStateBackend = operator_state_backend
         self.functions: dict[str, Union[Function, StatefulFunction]] = {}
-        self.dns = {}  # where the other functions exist
-        self.partitions = partitions
+        self.dns: dict[str, dict[str, tuple[str, int]]] = {}  # where the other functions exist
 
     async def run_function(self, function_name: str, *params) -> Awaitable:
         logging.info(f'PROCESSING FUNCTION -> {function_name} of operator: {self.name} with params: {params}')

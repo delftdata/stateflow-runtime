@@ -4,8 +4,8 @@ from universalis.common.operator import BaseOperator
 class StateflowGraph:
 
     def __init__(self, name: str):
-        self.name = name
-        self.nodes = {}
+        self.name: str = name
+        self.nodes: dict[str, BaseOperator] = {}
         self.edges: dict[str, list[str]] = {}
 
     def add_operator(self, operator: BaseOperator):

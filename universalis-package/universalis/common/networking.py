@@ -12,7 +12,7 @@ from .serialization import Serializer, msgpack_serialization, msgpack_deserializ
 class NetworkingManager:
 
     def __init__(self):
-        self.conns: dict[tuple[str, int, str, str], ZmqStream] = {}
+        self.conns: dict[tuple[str, int, str, str], ZmqStream] = {}  # HERE BETTER TO ADD A CONNECTION POOL
         self.locks: dict[tuple[str, int, str, str], asyncio.Lock] = {}
 
     def close_all_connections(self):
@@ -68,7 +68,7 @@ class NetworkingManager:
         async with self.locks[(host, port, operator_name, function_name)]:
             await self.send_message(host, port, operator_name, function_name, msg, serializer)
             resp = await self.__receive_message(host, port, operator_name, function_name)
-            logging.warning("NETWORKING MODULE RECEIVED RESPONSE")
+            logging.info("NETWORKING MODULE RECEIVED RESPONSE")
             return resp
 
     @staticmethod

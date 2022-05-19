@@ -4,6 +4,4 @@ set -m
 
 exec python worker/worker_service.py &
 
-exec python worker/execution.py &
-
 exec redis-server /usr/local/etc/redis/redis.conf

@@ -5,7 +5,7 @@ from universalis.common.logging import logging
 class CreateOrder(StatefulFunction):
     async def run(self, key, user_key):
         await self.state.put(key, {'user_key': user_key, 'items': []})
-        # return key
+        return key
 
 
 class AddItem(StatefulFunction):
@@ -13,6 +13,7 @@ class AddItem(StatefulFunction):
         order_data = await self.state.get(order_key)
         order_data['items'].append({'item_key': item_key, 'quantity': quantity, 'cost': cost})
         await self.state.put(order_key, order_data)
+        return order_data
 
 
 class Checkout(StatefulFunction):
@@ -35,3 +36,4 @@ class Checkout(StatefulFunction):
                                                     function_name='SubtractCredit',
                                                     key=order_data['user_key'],
                                                     params=(order_data['user_key'], total_cost))
+        return order_data

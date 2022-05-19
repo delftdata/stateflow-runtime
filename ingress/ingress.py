@@ -16,7 +16,7 @@ from universalis.common.stateful_function import make_key_hashable, StrKeyNotUUI
 SERVER_PORT = 8888
 DISCOVERY_HOST = os.environ['DISCOVERY_HOST']
 DISCOVERY_PORT = int(os.environ['DISCOVERY_PORT'])
-registered_operator_connections: dict[dict[str, tuple[str, int]]] = {}
+registered_operator_connections: dict[str, dict[str, tuple[str, int]]] = {}
 
 
 async def get_registered_operators(networking_manager):
