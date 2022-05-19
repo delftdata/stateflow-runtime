@@ -12,7 +12,7 @@ from universalis.common.serialization import Serializer
 from coordinator import Coordinator
 
 SERVER_PORT = 8888
-operator_partition_locations: dict[dict[str, tuple[str, int]]] = {}
+operator_partition_locations: dict[str, dict[str, tuple[str, int]]] = {}
 
 
 async def schedule_operators(coordinator, networking, message):

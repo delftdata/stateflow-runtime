@@ -7,3 +7,5 @@ aiozmq==0.9.0
 aiojobs==1.0.0
 # monitoring service
 psutil==5.9.0
+# kafka
+kafka-python==2.0.2
