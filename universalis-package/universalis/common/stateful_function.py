@@ -1,4 +1,3 @@
-import os
 import uuid
 from abc import abstractmethod
 
@@ -91,18 +90,9 @@ class StatefulFunction(Function):
     def set_dns(self, dns):
         self.dns = dns
 
-    async def __call_discovery(self):
-        discovery_host, discovery_port = os.environ['DISCOVERY_HOST'], int(os.environ['DISCOVERY_PORT'])
-        self.dns = await self.networking.send_message_request_response(discovery_host,
-                                                                       discovery_port,
-                                                                       "",
-                                                                       ({"__COM_TYPE__": "DISCOVER", "__MSG__": ""}),
-                                                                       Serializer.MSGPACK)
-
     async def prepare_message_transmission(self, operator_name: str, key, function_name: str, params):
         if operator_name not in self.dns:
-            logging.info(f"Couldn't find operator: {operator_name} in {self.dns}")
-            await self.__call_discovery()
+            logging.error(f"Couldn't find operator: {operator_name} in {self.dns}")
 
         partition: str = str(int(make_key_hashable(key)) % len(self.dns[operator_name].keys()))
 
