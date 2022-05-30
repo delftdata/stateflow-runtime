@@ -10,8 +10,7 @@ class InMemoryOperatorState(BaseOperatorState):
         super().__init__()
         self.data: dict = {}
 
-    async def put(self, key, value, **kwargs):
-        t_id = kwargs['t_id']
+    async def put(self, key, value, t_id: int):
         async with self.write_set_lock:
             if t_id in self.write_sets:
                 self.write_sets[t_id][key] = value
@@ -19,8 +18,7 @@ class InMemoryOperatorState(BaseOperatorState):
                 self.write_sets[t_id] = {key: value}
             self.writes[key] = min(self.writes.get(key, t_id), t_id)
 
-    async def get(self, key, **kwargs) -> Any:
-        t_id = kwargs['t_id']
+    async def get(self, key, t_id: int) -> Any:
         async with self.read_set_lock:
             if t_id in self.read_sets:
                 self.read_sets[t_id].add(key)
@@ -39,12 +37,11 @@ class InMemoryOperatorState(BaseOperatorState):
     async def exists(self, key):
         return True if key in self.data else False
 
-    async def commit(self):
+    async def commit(self, aborted_from_remote: list[int]):
+        self.aborted_transactions += aborted_from_remote
         updates_to_commit = {}
         for t_id, ws in self.write_sets.items():
-            if not self.has_conflicts(t_id):
+            if t_id not in self.aborted_transactions:
                 updates_to_commit.update(ws)
         self.data.update(updates_to_commit)
-        aborted = self.aborted_transactions
         self.cleanup()
-        return aborted

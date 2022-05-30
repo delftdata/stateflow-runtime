@@ -12,62 +12,57 @@ from .serialization import Serializer, msgpack_serialization, msgpack_deserializ
 class NetworkingManager:
 
     def __init__(self):
-        self.conns: dict[tuple[str, int, str, str], ZmqStream] = {}  # HERE BETTER TO ADD A CONNECTION POOL
-        self.locks: dict[tuple[str, int, str, str], asyncio.Lock] = {}
+        self.conns: dict[tuple[str, int], ZmqStream] = {}  # HERE BETTER TO ADD A CONNECTION POOL
+        self.locks: dict[tuple[str, int], asyncio.Lock] = {}
 
     def close_all_connections(self):
         for stream in self.conns.values():
             stream.close()
         for lock in self.locks.values():
             lock.release()
-        self.conns: dict[tuple[str, int, str, str], ZmqStream] = {}
-        self.locks: dict[tuple[str, int, str, str], asyncio.Lock] = {}
+        self.conns: dict[tuple[str, int], ZmqStream] = {}
+        self.locks: dict[tuple[str, int], asyncio.Lock] = {}
 
-    async def create_socket_connection(self, host: str, port, operator_name: str, function_name: str):
-        self.locks[(host, port, operator_name, function_name)] = asyncio.Lock()
-        self.conns[(host, port, operator_name, function_name)] = await create_zmq_stream(zmq.DEALER,
-                                                                                         connect=f"tcp://{host}:{port}")
+    async def create_socket_connection(self, host: str, port):
+        self.locks[(host, port)] = asyncio.Lock()
+        self.conns[(host, port)] = await create_zmq_stream(zmq.DEALER, connect=f"tcp://{host}:{port}")
 
-    def close_socket_connection(self, host: str, port, operator_name: str, function_name: str):
-        if (host, port, operator_name, function_name) in self.conns:
-            self.conns[(host, port, operator_name, function_name)].close()
-            del self.conns[(host, port, operator_name, function_name)]
-            self.locks[(host, port, operator_name, function_name)].release()
-            del self.locks[(host, port, operator_name, function_name)]
+    def close_socket_connection(self, host: str, port):
+        if (host, port) in self.conns:
+            self.conns[(host, port)].close()
+            del self.conns[(host, port)]
+            self.locks[(host, port)].release()
+            del self.locks[(host, port)]
         else:
             logging.warning('The socket that you are trying to close does not exist')
 
     async def send_message(self,
                            host,
                            port,
-                           operator_name,
-                           function_name,
                            msg: object,
                            serializer: Serializer = Serializer.CLOUDPICKLE):
 
-        if (host, port, operator_name, function_name) not in self.conns:
-            await self.create_socket_connection(host, port, operator_name, function_name)
+        if (host, port) not in self.conns:
+            await self.create_socket_connection(host, port)
         msg = self.encode_message(msg, serializer)
-        self.conns[(host, port, operator_name, function_name)].write((msg, ))
+        self.conns[(host, port)].write((msg, ))
 
-    async def __receive_message(self, host, port, operator_name, function_name):
+    async def __receive_message(self, host, port):
         # To be used only by the request response because the lock is needed
-        answer = await self.conns[(host, port, operator_name, function_name)].read()
+        answer = await self.conns[(host, port)].read()
         return self.decode_message(answer[0])
 
     async def send_message_request_response(self,
                                             host,
                                             port,
-                                            operator_name,
-                                            function_name,
                                             msg: object,
                                             serializer: Serializer = Serializer.CLOUDPICKLE):
 
-        if (host, port, operator_name, function_name) not in self.conns:
-            await self.create_socket_connection(host, port, operator_name, function_name)
-        async with self.locks[(host, port, operator_name, function_name)]:
-            await self.send_message(host, port, operator_name, function_name, msg, serializer)
-            resp = await self.__receive_message(host, port, operator_name, function_name)
+        if (host, port) not in self.conns:
+            await self.create_socket_connection(host, port)
+        async with self.locks[(host, port)]:
+            await self.send_message(host, port, msg, serializer)
+            resp = await self.__receive_message(host, port)
             logging.info("NETWORKING MODULE RECEIVED RESPONSE")
             return resp
 

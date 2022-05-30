@@ -61,8 +61,6 @@ class Universalis:
 
         await self.networking_manager.send_message(self.ingress_that_serves.host,
                                                    self.ingress_that_serves.port,
-                                                   "",
-                                                   "",
                                                    {"__COM_TYPE__": 'REMOTE_FUN_CALL',
                                                     "__MSG__": event},
                                                    Serializer.MSGPACK)
@@ -92,7 +90,8 @@ class Universalis:
                                                 partition=partition)
 
     async def start_kafka_producer(self):
-        self.kafka_producer = AIOKafkaProducer(bootstrap_servers=[self.kafka_url])
+        self.kafka_producer = AIOKafkaProducer(bootstrap_servers=[self.kafka_url],
+                                               enable_idempotence=True)
         while True:
             try:
                 await self.kafka_producer.start()
@@ -105,7 +104,5 @@ class Universalis:
     async def send_execution_graph(self, stateflow_graph: StateflowGraph):
         await self.networking_manager.send_message(self.coordinator_adr,
                                                    self.coordinator_port,
-                                                   "",
-                                                   "",
                                                    {"__COM_TYPE__": 'SEND_EXECUTION_GRAPH',
                                                     "__MSG__": stateflow_graph})

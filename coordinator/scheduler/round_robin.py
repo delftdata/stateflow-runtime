@@ -1,5 +1,6 @@
 import asyncio
 
+from universalis.common.logging import logging
 from universalis.common.operator import BaseOperator
 from universalis.common.stateflow_graph import StateflowGraph
 from universalis.common.stateflow_worker import StateflowWorker
@@ -31,7 +32,7 @@ class RoundRobin(BaseScheduler):
 
         tasks = [
             asyncio.ensure_future(
-                network_manager.send_message(worker[0], worker[1], "", "",
+                network_manager.send_message(worker[0], worker[1],
                                              {"__COM_TYPE__": 'RECEIVE_EXE_PLN',
                                               "__MSG__": (operator_partitions,
                                                           operator_partition_locations,
