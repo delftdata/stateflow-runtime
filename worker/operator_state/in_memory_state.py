@@ -8,7 +8,7 @@ class InMemoryOperatorState(BaseOperatorState):
 
     def __init__(self):
         super().__init__()
-        self.data: dict = {}
+        self.data: dict[Any, Any] = {}
 
     async def put(self, key, value, t_id: int):
         async with self.write_set_lock:
@@ -37,8 +37,8 @@ class InMemoryOperatorState(BaseOperatorState):
     async def exists(self, key):
         return True if key in self.data else False
 
-    async def commit(self, aborted_from_remote: list[int]):
-        self.aborted_transactions += aborted_from_remote
+    async def commit(self, aborted_from_remote: set[int]):
+        self.aborted_transactions: set[int] = self.aborted_transactions.union(aborted_from_remote)
         updates_to_commit = {}
         for t_id, ws in self.write_sets.items():
             if t_id not in self.aborted_transactions:

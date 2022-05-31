@@ -47,14 +47,14 @@ class RedisOperatorState(BaseOperatorState):
     async def exists(self, key):
         return True if await self.local_redis_instance.exists(key) > 0 else False
 
-    async def commit(self, aborted_from_remote: list[int]):
-        self.aborted_transactions += aborted_from_remote
+    async def commit(self, aborted_from_remote: set[int]):
+        self.aborted_transactions: set[int] = self.aborted_transactions.union(aborted_from_remote)
         updates_to_commit = {}
         if len(self.write_sets) == 0:
             return
         for t_id, ws in self.write_sets.items():
             if t_id not in self.aborted_transactions:
                 updates_to_commit.update(ws)
-        logging.warning(f'Comiting: {updates_to_commit}')
+        logging.warning(f'Committing: {updates_to_commit}')
         await self.local_redis_instance.mset(updates_to_commit)
         self.cleanup()

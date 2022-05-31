@@ -1,5 +1,4 @@
 from universalis.common.operator import StatefulFunction
-from universalis.common.logging import logging
 
 
 class CreateOrder(StatefulFunction):
@@ -11,11 +10,8 @@ class CreateOrder(StatefulFunction):
 class AddItem(StatefulFunction):
     async def run(self, order_key, item_key, quantity, cost):
         order_data = await self.get(order_key)
-        logging.warning(order_data)
         order_data['items'].append({'item_key': item_key, 'quantity': quantity, 'cost': cost})
-        logging.warning(order_data)
         await self.put(order_key, order_data)
-        logging.warning(order_data)
         return order_data
 
 
@@ -24,9 +20,7 @@ class Checkout(StatefulFunction):
         order_data = await self.get(order_key)
         total_cost = 0
         for item in order_data['items']:
-            # call stock operator here to subtract stock
-            logging.warning('(O)  REQUEST -> SubtractStock')
-
+            # call stock operator to subtract stock
             await self.call_remote_function_no_response(operator_name='stock',
                                                         function_name='SubtractStock',
                                                         key=item['item_key'],

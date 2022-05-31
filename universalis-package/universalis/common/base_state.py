@@ -9,9 +9,10 @@ class BaseOperatorState(ABC):
         self.write_set_lock = asyncio.Lock()
         self.write_sets: dict[int, dict[Any, Any]] = {}
         self.writes: dict[Any, int] = {}
+        self.writes: dict[Any, int] = {}
         self.read_set_lock = asyncio.Lock()
         self.read_sets: dict[int, set[Any]] = {}
-        self.aborted_transactions: list[int] = []
+        self.aborted_transactions: set[int] = set()
 
     @abstractmethod
     async def put(self, key, value, t_id: int):
@@ -30,21 +31,21 @@ class BaseOperatorState(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def commit(self, aborted_from_remote: list[int]):
+    async def commit(self, aborted_from_remote: set[int]):
         raise NotImplementedError
 
-    def check_conflicts(self) -> list[int]:
+    def check_conflicts(self) -> set[int]:
         for t_id, ws in self.write_sets.items():
             ws = self.write_sets[t_id]
             rs = self.read_sets.get(t_id, set())
             keys = rs.union(set(ws.keys()))
             for key in keys:
                 if key in self.writes and self.writes[key] < t_id:
-                    self.aborted_transactions.append(t_id)
+                    self.aborted_transactions.add(t_id)
         return self.aborted_transactions
 
     def cleanup(self):
         self.write_sets = {}
         self.writes = {}
         self.read_sets = {}
-        self.aborted_transactions = []
+        self.aborted_transactions = set()

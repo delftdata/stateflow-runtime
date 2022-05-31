@@ -13,9 +13,9 @@ logging.basicConfig(level=logging.INFO,
                     datefmt='%I:%M:%S')
 logger = logging.getLogger(__name__)
 
-NUMBER_0F_ITEMS = 1000
-NUMBER_OF_USERS = 1000
-NUMBER_OF_ORDERS = 2000
+NUMBER_0F_ITEMS = 1
+NUMBER_OF_USERS = 1
+NUMBER_OF_ORDERS = 1
 
 ORDER_URL = STOCK_URL = PAYMENT_URL = 'http://localhost:5000'
 
@@ -39,6 +39,7 @@ async def create_items(session, number_of_items: int, stock: int = 1000000000, p
         tasks.append(asyncio.ensure_future(create_item(session, create_item_url)))
     item_ids = await asyncio.gather(*tasks)
     tasks = []
+    time.sleep(2)
     # Add funds
     for item_id in item_ids:
         create_item_url = f"{STOCK_URL}/stock/add_stock/{item_id}/{stock}"
@@ -60,6 +61,7 @@ async def create_users(session, number_of_users: int, credit: int = 10000000000)
         create_user_url = f"{PAYMENT_URL}/user/create"
         tasks.append(asyncio.ensure_future(create_user(session, create_user_url)))
     user_ids = await asyncio.gather(*tasks)
+    time.sleep(2)
     tasks = []
     # Add funds
     for user_id in user_ids:
@@ -83,6 +85,7 @@ async def create_orders(session, item_ids, user_ids, number_of_orders):
         create_order_url = f"{ORDER_URL}/order/create_order/{user_id}"
         tasks.append(asyncio.ensure_future(create_order(session, create_order_url)))
     order_ids = await asyncio.gather(*tasks)
+    time.sleep(2)
     tasks = []
     # Add items
     for order_id in order_ids:

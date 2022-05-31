@@ -1,6 +1,10 @@
 from universalis.common.operator import StatefulFunction
 
 
+class NotEnoughStock(Exception):
+    pass
+
+
 class CreateItem(StatefulFunction):
     async def run(self, key: str, name: str, price: int):
         await self.put(key, {'name': name, 'price': price, 'stock': 0})
@@ -17,8 +21,9 @@ class AddStock(StatefulFunction):
 
 class SubtractStock(StatefulFunction):
     async def run(self, key: str, stock: int):
-        # is a lock needed here? (we don't want it, the system should handle it)
         item_data = await self.get(key)
         item_data['stock'] -= stock
+        if item_data['stock'] < 0:
+            raise NotEnoughStock()
         await self.put(key, item_data)
         return item_data

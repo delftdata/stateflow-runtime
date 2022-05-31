@@ -13,12 +13,9 @@ class RunFuncPayload:
 
 
 @dataclass
-class RunRemoteFuncPayload:
-    key: object
-    timestamp: int
+class SequencedItem:
     t_id: int
-    operator_name: str
-    partition: int
-    function_name: str
-    params: tuple
-    response_socket: object
+    payload: RunFuncPayload
+
+    def __hash__(self):
+        return hash(self.t_id)

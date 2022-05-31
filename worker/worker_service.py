@@ -3,7 +3,6 @@ import itertools
 import os
 import socket
 import time
-from typing import Union
 
 import aiojobs
 import aiozmq
@@ -20,8 +19,20 @@ from universalis.common.serialization import Serializer
 
 from worker.operator_state.in_memory_state import InMemoryOperatorState
 from worker.operator_state.redis_state import RedisOperatorState
-from worker.run_func_payload import RunFuncPayload, RunRemoteFuncPayload
+from worker.operator_state.stateless import Stateless
+from worker.run_func_payload import RunFuncPayload, SequencedItem
 from worker.sequencer.sequencer import Sequencer
+
+# TODO batch producer in the universalis client
+#  https://aiokafka.readthedocs.io/en/stable/producer.html#direct-batch-control
+
+# TODO The entire dataflow graph should have the same state backend for aria to work
+#  (must change the client api)
+
+# TODO error conflicts should go to the egress as 400
+
+# TODO Fix the wait peer, cannot wait forever (deadlock)
+
 
 SERVER_PORT = 8888
 DISCOVERY_HOST = os.environ['DISCOVERY_HOST']
@@ -47,34 +58,32 @@ class Worker:
         self.peers: dict[int, tuple[str, int]] = {}  # worker_id: (host, port)
         # ready_to_commit_events -> worker_id: Event that appears if the peer is ready to commit
         self.ready_to_commit_events: dict[int, asyncio.Event] = {}
-        self.aborted_from_remote: dict[int, list] = {}
-        self.logic_aborts = []
-        self.logic_aborts_from_remote: dict[int, list] = {}
-        self.local_state: Union[InMemoryOperatorState, RedisOperatorState] = None
+        self.aborted_from_remote: dict[int, set[int]] = {}
+        self.logic_aborts: set[int] = set()
+        self.logic_aborts_from_remote: dict[int, set[int]] = {}
+        self.local_state: InMemoryOperatorState | RedisOperatorState | Stateless = Stateless()
 
     def attach_state_to_operator(self, operator: Operator):
-        # TODO The entire dataflow graph should have the same state backend for aria to work
-        #  (must change the client api)
         if operator.operator_state_backend == LocalStateBackend.DICT:
-            if self.local_state is None:
+            if isinstance(self.local_state, Stateless):
                 self.local_state = InMemoryOperatorState()
             operator.attach_state_networking(self.local_state, self.networking, self.dns)
         elif operator.operator_state_backend == LocalStateBackend.REDIS:
-            if self.local_state is None:
+            if isinstance(self.local_state, Stateless):
                 self.local_state = RedisOperatorState()
             operator.attach_state_networking(self.local_state, self.networking, self.dns)
         else:
             logging.error(f"Invalid operator state backend type: {operator.operator_state_backend}")
 
     async def run_function(self, t_id: int, payload: RunFuncPayload):
-        # TODO This should be re-evaluated
         operator_partition = self.registered_operators[payload.operator_name][payload.partition]
         response = await operator_partition.run_function(t_id,
                                                          payload.timestamp,
                                                          payload.function_name,
                                                          *payload.params)
         if isinstance(response, Exception):
-            self.logic_aborts.append(t_id)
+            self.logic_aborts.add(t_id)
+            response = str(response)
 
         if payload.response_socket:
             self.router.write((payload.response_socket, self.networking.encode_message(response,
@@ -88,44 +97,55 @@ class Worker:
         for worker_id, url in self.peers.items():
             await self.scheduler.spawn(self.networking.send_message(url[0], url[1],
                                                                     {"__COM_TYPE__": 'CMT',
-                                                                     "__MSG__": (self.id, aborted, self.logic_aborts)},
+                                                                     "__MSG__": (self.id, list(aborted),
+                                                                                 list(self.logic_aborts))},
                                                                     Serializer.MSGPACK))
 
     async def function_scheduler(self):
         while True:
             await asyncio.sleep(EPOCH_INTERVAL)  # EPOCH TIMER
-            sequence = await self.sequencer.get_epoch()  # GET SEQUENCE
+            sequence: set[SequencedItem] = await self.sequencer.get_epoch()  # GET SEQUENCE
             if sequence is not None:
-                run_function_tasks = []
-                for t_id, payload in sequence:
-                    run_function_tasks.append(asyncio.ensure_future(self.run_function(t_id, payload)))
-            # TODO wait for commit messages with all the conflicts
-            # TODO resolve local concurrency conflicts that came as a result of remote and add them to the next sequence
-            # TODO error conflicts should go to the egress as 400
-            # TODO batch producer in the universalis client
+                # Run all the epochs functions concurrently
+                logging.warning(f'Running functions...')
+                run_function_tasks = [asyncio.ensure_future(self.run_function(sequenced_item.t_id,
+                                                                              sequenced_item.payload))
+                                      for sequenced_item in sequence]
                 await asyncio.gather(*run_function_tasks)
-                aborted = self.local_state.check_conflicts()
-                logging.warning(f'Aborted: {aborted}')
+                # Check for local state conflicts
+                logging.warning(f'Checking conflicts...')
+                aborted: set[int] = self.local_state.check_conflicts()
+                # Notify peers that we are ready to commit
+                logging.warning(f'Notify peers...')
                 await self.send_commit_to_peers(aborted)
-                logging.warning(self.ready_to_commit_events)
+                # Wait for remote to be ready to commit
                 wait_remote_commits_task = [asyncio.ensure_future(event.wait())
                                             for event in self.ready_to_commit_events.values()]
                 logging.warning(f'Waiting on remote commits...')
                 await asyncio.gather(*wait_remote_commits_task)
-                # TODO ADD THE CONCURRENCY ABORTS BACK TO THE SEQUENCER
-                remote_aborted = list(itertools.chain.from_iterable(self.aborted_from_remote.values()))
-                logic_aborts_everywhere = list(itertools.chain.from_iterable(self.logic_aborts_from_remote.values()))
-                logic_aborts_everywhere.extend(self.logic_aborts)
-                aborts = remote_aborted + logic_aborts_everywhere
-                logging.warning(f'Commits received!')
-                await self.local_state.commit(aborts)
-                # TODO make sure of the cleanup
+                # Gather the different abort messages (application logic, concurrency)
+                remote_aborted: set[int] = set(
+                    itertools.chain.from_iterable(self.aborted_from_remote.values())
+                )
+                logic_aborts_everywhere: set[int] = set(
+                    itertools.chain.from_iterable(self.logic_aborts_from_remote.values())
+                )
+                logic_aborts_everywhere.union(self.logic_aborts)
+                # Commit the local while taking into account the aborts from remote
+                logging.warning(f'Sequence committed!')
+                await self.local_state.commit(remote_aborted.union(logic_aborts_everywhere))
+                # Cleanup
                 for event in self.ready_to_commit_events.values():
                     event.clear()
+                self.aborted_from_remote = {}
                 self.logic_aborts = []
+                self.logic_aborts_from_remote = {}
+                # Re-sequence the aborted transactions due to concurrency
+                await self.sequencer.sequence_aborts_for_next_epoch(aborted.union(remote_aborted))
 
     async def start_kafka_egress_producer(self):
-        self.kafka_egress_producer = AIOKafkaProducer(bootstrap_servers=[KAFKA_URL])
+        self.kafka_egress_producer = AIOKafkaProducer(bootstrap_servers=[KAFKA_URL],
+                                                      enable_idempotence=True)
         while True:
             try:
                 await self.kafka_egress_producer.start()
@@ -155,40 +175,44 @@ class Worker:
                 result = await consumer.getmany(timeout_ms=wait_time_ms)
                 for _, messages in result.items():
                     if messages:
-                        for msg in messages:
-                            logging.info(f"Consumed: {msg.topic} {msg.partition} {msg.offset} "
-                                         f"{msg.key} {msg.value} {msg.timestamp}")
-                            deserialized_data: dict = self.networking.decode_message(msg.value)
-                            message_type: str = deserialized_data['__COM_TYPE__']
-                            message = deserialized_data['__MSG__']
-                            if message_type == 'RUN_FUN':
-                                run_func_payload: RunFuncPayload = self.unpack_run_payload(message)
-                                logging.warning(f'SEQ FROM KAFKA: {run_func_payload.function_name}')
-                                await self.sequencer.sequence(run_func_payload)
-                            else:
-                                logging.error(f"Invalid message type: {message_type} passed to KAFKA")
+                        for message in messages:
+                            await self.handle_message_from_kafka(message)
         finally:
             await consumer.stop()
+
+    async def handle_message_from_kafka(self, msg):
+        logging.info(f"Consumed: {msg.topic} {msg.partition} {msg.offset} "
+                     f"{msg.key} {msg.value} {msg.timestamp}")
+        deserialized_data: dict = self.networking.decode_message(msg.value)
+        message_type: str = deserialized_data['__COM_TYPE__']
+        message = deserialized_data['__MSG__']
+        if message_type == 'RUN_FUN':
+            run_func_payload: RunFuncPayload = self.unpack_run_payload(message)
+            logging.warning(f'SEQ FROM KAFKA: {run_func_payload.function_name}')
+            await self.sequencer.sequence(run_func_payload)
+        else:
+            logging.error(f"Invalid message type: {message_type} passed to KAFKA")
 
     async def worker_controller(self, deserialized_data, resp_adr):
         message_type: str = deserialized_data['__COM_TYPE__']
         message = deserialized_data['__MSG__']
         match message_type:
-            case 'RUN_FUN_REMOTE' | 'RUN_FUN_RQ_RS_REMOTE':  # TODO RQ_RS for remote reads RUN_FUN for imediate execution not sequence
+            case 'RUN_FUN_REMOTE' | 'RUN_FUN_RQ_RS_REMOTE':
                 if message_type == 'RUN_FUN_REMOTE':
                     logging.warning('CALLED RUN FUN FROM PEER')
-                    await self.sequencer.sequence(self.unpack_run_remote_payload(message))
+                    payload = self.unpack_run_payload(message)
                 else:
                     logging.warning('CALLED RUN FUN RQ RS FROM PEER')
-                    await self.sequencer.sequence(self.unpack_run_remote_payload(message, resp_adr))  # REQUEST RESPONSE
+                    payload = self.unpack_run_payload(message, resp_adr)
+                await self.scheduler.spawn(self.run_function(message['__T_ID__'], payload))
             case 'RECEIVE_EXE_PLN':  # RECEIVE EXECUTION PLAN OF A DATAFLOW GRAPH
                 # This contains all the operators of a job assigned to this worker
                 await self.handle_execution_plan(message)
             case 'CMT':
                 remote_worker_id, aborted, logic_aborts = message
                 self.ready_to_commit_events[remote_worker_id].set()
-                self.aborted_from_remote[remote_worker_id] = aborted
-                self.logic_aborts_from_remote[remote_worker_id] = logic_aborts
+                self.aborted_from_remote[remote_worker_id] = set(aborted)
+                self.logic_aborts_from_remote[remote_worker_id] = set(logic_aborts)
             case _:
                 logging.error(f"Worker Service: Non supported command message type: {message_type}")
 
@@ -232,13 +256,6 @@ class Worker:
         return RunFuncPayload(message['__KEY__'], message['__TIMESTAMP__'], message['__OP_NAME__'],
                               message['__PARTITION__'], message['__FUN_NAME__'],
                               message['__PARAMS__'], response_socket)
-
-    @staticmethod
-    def unpack_run_remote_payload(message: dict, response_socket=None) -> RunRemoteFuncPayload:
-        return RunRemoteFuncPayload(message['__KEY__'], message['__TIMESTAMP__'],
-                                    message['__T_ID__'], message['__OP_NAME__'],
-                                    message['__PARTITION__'], message['__FUN_NAME__'],
-                                    message['__PARAMS__'], response_socket)
 
     async def register_to_coordinator(self):
         self.id = await self.networking.send_message_request_response(

@@ -44,8 +44,6 @@ class StatefulFunction(Function):
         super().__init__()
 
     async def __call__(self, *args, **kwargs):
-        # if self.state is None:
-        #     raise StateNotAttachedError('Cannot call stateful function without attached state')
         try:
             return await self.run(*args)
         except Exception as e:
