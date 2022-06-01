@@ -41,6 +41,10 @@ class Sequencer:
                 self.epoch_counter += 1
                 return self.distributed_log
 
+    async def increment_epoch(self):
+        async with self.distributed_log_lock:
+            self.epoch_counter += 1
+
     def cleanup(self):
         self.distributed_log = set()
         self.t_counter = 0

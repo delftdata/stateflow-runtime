@@ -13,9 +13,9 @@ logging.basicConfig(level=logging.INFO,
                     datefmt='%I:%M:%S')
 logger = logging.getLogger(__name__)
 
-NUMBER_0F_ITEMS = 1
-NUMBER_OF_USERS = 1
-NUMBER_OF_ORDERS = 1
+NUMBER_0F_ITEMS = 1000
+NUMBER_OF_USERS = 1000
+NUMBER_OF_ORDERS = 2000
 
 ORDER_URL = STOCK_URL = PAYMENT_URL = 'http://localhost:5000'
 

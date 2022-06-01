@@ -33,6 +33,12 @@ from worker.sequencer.sequencer import Sequencer
 
 # TODO Fix the wait peer, cannot wait forever (deadlock)
 
+# TODO replace quart with sanic? add setup endpoint with quart or before process start sanic
+
+# TODO How to wait on sub-transactions?
+
+# TODO What happens with the read uncommitted?
+
 
 SERVER_PORT = 8888
 DISCOVERY_HOST = os.environ['DISCOVERY_HOST']
@@ -93,7 +99,7 @@ class Worker:
                                                            value=self.networking.encode_message(response,
                                                                                                 Serializer.MSGPACK))
 
-    async def send_commit_to_peers(self, aborted):
+    async def send_commit_to_peers(self, aborted: set[int]):
         for worker_id, url in self.peers.items():
             await self.scheduler.spawn(self.networking.send_message(url[0], url[1],
                                                                     {"__COM_TYPE__": 'CMT',
@@ -135,13 +141,33 @@ class Worker:
                 logging.warning(f'Sequence committed!')
                 await self.local_state.commit(remote_aborted.union(logic_aborts_everywhere))
                 # Cleanup
-                for event in self.ready_to_commit_events.values():
-                    event.clear()
-                self.aborted_from_remote = {}
-                self.logic_aborts = []
-                self.logic_aborts_from_remote = {}
+                self.cleanup_after_epoch()
                 # Re-sequence the aborted transactions due to concurrency
                 await self.sequencer.sequence_aborts_for_next_epoch(aborted.union(remote_aborted))
+                logging.warning(f'Epoch: {self.sequencer.epoch_counter - 1} done')
+            elif sequence is None and self.remote_wants_to_commit():
+                await self.send_commit_to_peers(set())
+                # Wait for remote to be ready to commit
+                wait_remote_commits_task = [asyncio.ensure_future(event.wait())
+                                            for event in self.ready_to_commit_events.values()]
+                logging.warning(f'Waiting on remote commits...')
+                await asyncio.gather(*wait_remote_commits_task)
+                logging.warning(f'Epoch: {self.sequencer.epoch_counter} done NOTHING TO COMMIT')
+                await self.sequencer.increment_epoch()
+                self.cleanup_after_epoch()
+
+    def cleanup_after_epoch(self):
+        for event in self.ready_to_commit_events.values():
+            event.clear()
+        self.aborted_from_remote = {}
+        self.logic_aborts = set()
+        self.logic_aborts_from_remote = {}
+
+    def remote_wants_to_commit(self) -> bool:
+        for ready_to_commit_event in self.ready_to_commit_events.values():
+            if ready_to_commit_event.is_set():
+                return True
+        return False
 
     async def start_kafka_egress_producer(self):
         self.kafka_egress_producer = AIOKafkaProducer(bootstrap_servers=[KAFKA_URL],
