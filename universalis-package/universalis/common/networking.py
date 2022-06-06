@@ -1,5 +1,7 @@
 import asyncio
+import fractions
 import struct
+import socket
 
 import zmq
 from aiozmq import create_zmq_stream, ZmqStream
@@ -14,6 +16,22 @@ class NetworkingManager:
     def __init__(self):
         self.conns: dict[tuple[str, int], ZmqStream] = {}  # HERE BETTER TO ADD A CONNECTION POOL
         self.locks: dict[tuple[str, int], asyncio.Lock] = {}
+        self.host_name: str = str(socket.gethostbyname(socket.gethostname()))
+        self.waited_ack_events: dict[int, asyncio.Event] = {}  # event_id: ack_event
+        self.ack_id: int = 0
+        self.ack_fraction: dict[int, fractions.Fraction] = {}
+        self.waited_ack_events_lock: asyncio.Lock = asyncio.Lock()
+
+    def cleanup_after_epoch(self):
+        self.waited_ack_events = {}
+        self.ack_fraction = {}
+        self.ack_id = 0
+
+    def add_ack_fraction_str(self, ack_id: int, fraction_str: str):
+        self.ack_fraction[ack_id] += fractions.Fraction(fraction_str)
+        if self.ack_fraction[ack_id] == 1:
+            # All ACK parts have been gathered
+            self.waited_ack_events[ack_id].set()
 
     def close_all_connections(self):
         for stream in self.conns.values():
@@ -39,13 +57,30 @@ class NetworkingManager:
     async def send_message(self,
                            host,
                            port,
-                           msg: object,
+                           msg: dict[str, object],
                            serializer: Serializer = Serializer.CLOUDPICKLE):
 
         if (host, port) not in self.conns:
             await self.create_socket_connection(host, port)
         msg = self.encode_message(msg, serializer)
         self.conns[(host, port)].write((msg, ))
+
+    async def prepare_function_chain(self, ack_share) -> tuple[str, int, str]:
+        async with self.waited_ack_events_lock:
+            ack_payload = (self.host_name, self.ack_id, ack_share)
+            self.waited_ack_events[self.ack_id] = asyncio.Event()
+            self.ack_fraction[self.ack_id] = fractions.Fraction(0)
+            self.ack_id += 1
+        return ack_payload
+
+    async def send_message_ack(self,
+                               host,
+                               port,
+                               ack_payload: [str, int, str],
+                               msg: dict[str, object],
+                               serializer: Serializer = Serializer.CLOUDPICKLE):
+        msg["__ACK__"] = ack_payload
+        await self.send_message(host, port, msg, serializer=serializer)
 
     async def __receive_message(self, host, port):
         # To be used only by the request response because the lock is needed
@@ -55,7 +90,7 @@ class NetworkingManager:
     async def send_message_request_response(self,
                                             host,
                                             port,
-                                            msg: object,
+                                            msg: dict[str, object],
                                             serializer: Serializer = Serializer.CLOUDPICKLE):
 
         if (host, port) not in self.conns:

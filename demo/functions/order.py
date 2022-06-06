@@ -12,7 +12,6 @@ class AddItem(StatefulFunction):
         order_data = await self.get(order_key)
         order_data['items'].append({'item_key': item_key, 'quantity': quantity, 'cost': cost})
         await self.put(order_key, order_data)
-        return order_data
 
 
 class Checkout(StatefulFunction):
@@ -21,15 +20,14 @@ class Checkout(StatefulFunction):
         total_cost = 0
         for item in order_data['items']:
             # call stock operator to subtract stock
-            await self.call_remote_function_no_response(operator_name='stock',
-                                                        function_name='SubtractStock',
-                                                        key=item['item_key'],
-                                                        params=(item['item_key'], item['quantity']))
+            self.call_remote_async(operator_name='stock',
+                                   function_name='SubtractStock',
+                                   key=item['item_key'],
+                                   params=(item['item_key'], item['quantity']))
 
             total_cost += item['quantity'] * item['cost']
             # call user operator to subtract credit
-        await self.call_remote_function_no_response(operator_name='user',
-                                                    function_name='SubtractCredit',
-                                                    key=order_data['user_key'],
-                                                    params=(order_data['user_key'], total_cost))
-        return order_data
+        self.call_remote_async(operator_name='user',
+                               function_name='SubtractCredit',
+                               key=order_data['user_key'],
+                               params=(order_data['user_key'], total_cost))

@@ -39,11 +39,16 @@ class Sequencer:
                 logging.info(f"Sequencer Epoch: {self.epoch_counter} with items: {self.distributed_log}")
                 self.prev_epoch_idx = self.t_counter
                 self.epoch_counter += 1
-                return self.distributed_log
+                epoch = self.distributed_log
+                self.distributed_log = set()
+                return epoch
 
     async def increment_epoch(self):
         async with self.distributed_log_lock:
             self.epoch_counter += 1
+
+    def select_t_counter(self, remote):
+        self.t_counter = max(*remote, self.t_counter)
 
     def cleanup(self):
         self.distributed_log = set()

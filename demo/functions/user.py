@@ -16,7 +16,6 @@ class AddCredit(StatefulFunction):
         user_data = await self.get(key)
         user_data['credit'] += credit
         await self.put(key, user_data)
-        return user_data
 
 
 class SubtractCredit(StatefulFunction):
@@ -26,4 +25,3 @@ class SubtractCredit(StatefulFunction):
         if user_data['credit'] < 0:
             raise NotEnoughCredit()
         await self.put(key, user_data)
-        return user_data

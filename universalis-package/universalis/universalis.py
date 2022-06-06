@@ -82,15 +82,15 @@ class Universalis:
                  '__PARAMS__': params,
                  '__PARTITION__': partition,
                  '__TIMESTAMP__': timestamp}
-        message = self.networking_manager.encode_message({"__COM_TYPE__": 'RUN_FUN',
-                                                          "__MSG__": event},
-                                                         serializer=Serializer.MSGPACK)
         await self.kafka_producer.send_and_wait(operator.name,
-                                                value=message,
+                                                value=event,
                                                 partition=partition)
 
     async def start_kafka_producer(self):
         self.kafka_producer = AIOKafkaProducer(bootstrap_servers=[self.kafka_url],
+                                               value_serializer=lambda event: self.networking_manager.encode_message(
+                                                   {"__COM_TYPE__": 'RUN_FUN', "__MSG__": event},
+                                                   serializer=Serializer.MSGPACK),
                                                enable_idempotence=True)
         while True:
             try:

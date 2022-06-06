@@ -13,9 +13,9 @@ logging.basicConfig(level=logging.INFO,
                     datefmt='%I:%M:%S')
 logger = logging.getLogger(__name__)
 
-NUMBER_0F_ITEMS = 1000
-NUMBER_OF_USERS = 1000
-NUMBER_OF_ORDERS = 2000
+NUMBER_0F_ITEMS = 1
+NUMBER_OF_USERS = 1
+NUMBER_OF_ORDERS = 1
 
 ORDER_URL = STOCK_URL = PAYMENT_URL = 'http://localhost:5000'
 
@@ -90,7 +90,7 @@ async def create_orders(session, item_ids, user_ids, number_of_orders):
     # Add items
     for order_id in order_ids:
         item_id = random.choice(item_ids)
-        create_item_url = f"{ORDER_URL}/orders/add_item/{order_id}/{item_id}"
+        create_item_url = f"{ORDER_URL}/order/add_item/{order_id}/{item_id}"
         tasks.append(asyncio.ensure_future(post_and_get_status(session, create_item_url)))
     await asyncio.gather(*tasks)
     return order_ids
@@ -102,15 +102,17 @@ async def populate_databases():
         logger.info("Creating items ...")
         item_ids = await create_items(session, NUMBER_0F_ITEMS)
         logger.info("Items created")
+        time.sleep(2)
         logger.info("Creating users ...")
         user_ids = await create_users(session, NUMBER_OF_USERS)
         logger.info("Users created")
+        time.sleep(2)
         logger.info("Creating orders ...")
         order_ids = await create_orders(session, item_ids, user_ids, NUMBER_OF_ORDERS)
         logger.info("Orders created")
         end = timer()
         logger.info(f'Time to populate: {end - start} seconds')
-        time.sleep(10)
+        time.sleep(2)
         await perform_checkouts(session, order_ids)
 
 

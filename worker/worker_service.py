@@ -1,7 +1,6 @@
 import asyncio
 import itertools
 import os
-import socket
 import time
 
 import aiojobs
@@ -39,6 +38,13 @@ from worker.sequencer.sequencer import Sequencer
 
 # TODO What happens with the read uncommitted?
 
+# TODO fix operator 8888  fixed port
+
+# TODo explore run_in_excecutor for cpu bound tasks
+
+# TODO SYNCHRONIZE STUFF!!!!!!!!!!
+
+# TODO Find why the acks are not getting distributed
 
 SERVER_PORT = 8888
 DISCOVERY_HOST = os.environ['DISCOVERY_HOST']
@@ -68,6 +74,7 @@ class Worker:
         self.logic_aborts: set[int] = set()
         self.logic_aborts_from_remote: dict[int, set[int]] = {}
         self.local_state: InMemoryOperatorState | RedisOperatorState | Stateless = Stateless()
+        self.t_counters: dict[int, int] = {}
 
     def attach_state_to_operator(self, operator: Operator):
         if operator.operator_state_backend == LocalStateBackend.DICT:
@@ -81,11 +88,12 @@ class Worker:
         else:
             logging.error(f"Invalid operator state backend type: {operator.operator_state_backend}")
 
-    async def run_function(self, t_id: int, payload: RunFuncPayload):
+    async def run_function(self, t_id: int, payload: RunFuncPayload, ack_payload=None):
         operator_partition = self.registered_operators[payload.operator_name][payload.partition]
         response = await operator_partition.run_function(t_id,
                                                          payload.timestamp,
                                                          payload.function_name,
+                                                         ack_payload,
                                                          *payload.params)
         if isinstance(response, Exception):
             self.logic_aborts.add(t_id)
@@ -104,7 +112,8 @@ class Worker:
             await self.scheduler.spawn(self.networking.send_message(url[0], url[1],
                                                                     {"__COM_TYPE__": 'CMT',
                                                                      "__MSG__": (self.id, list(aborted),
-                                                                                 list(self.logic_aborts))},
+                                                                                 list(self.logic_aborts),
+                                                                                 self.sequencer.t_counter)},
                                                                     Serializer.MSGPACK))
 
     async def function_scheduler(self):
@@ -114,10 +123,14 @@ class Worker:
             if sequence is not None:
                 # Run all the epochs functions concurrently
                 logging.warning(f'Running functions...')
-                run_function_tasks = [asyncio.ensure_future(self.run_function(sequenced_item.t_id,
-                                                                              sequenced_item.payload))
+                run_function_tasks = [self.run_function(sequenced_item.t_id, sequenced_item.payload)
                                       for sequenced_item in sequence]
                 await asyncio.gather(*run_function_tasks)
+                # Wait for chains to finish
+                logging.warning(f'Waiting on chained functions...')
+                chain_acks = [ack.wait()
+                              for ack in self.networking.waited_ack_events.values()]
+                await asyncio.gather(*chain_acks)
                 # Check for local state conflicts
                 logging.warning(f'Checking conflicts...')
                 aborted: set[int] = self.local_state.check_conflicts()
@@ -125,7 +138,7 @@ class Worker:
                 logging.warning(f'Notify peers...')
                 await self.send_commit_to_peers(aborted)
                 # Wait for remote to be ready to commit
-                wait_remote_commits_task = [asyncio.ensure_future(event.wait())
+                wait_remote_commits_task = [event.wait()
                                             for event in self.ready_to_commit_events.values()]
                 logging.warning(f'Waiting on remote commits...')
                 await asyncio.gather(*wait_remote_commits_task)
@@ -148,7 +161,7 @@ class Worker:
             elif sequence is None and self.remote_wants_to_commit():
                 await self.send_commit_to_peers(set())
                 # Wait for remote to be ready to commit
-                wait_remote_commits_task = [asyncio.ensure_future(event.wait())
+                wait_remote_commits_task = [event.wait()
                                             for event in self.ready_to_commit_events.values()]
                 logging.warning(f'Waiting on remote commits...')
                 await asyncio.gather(*wait_remote_commits_task)
@@ -162,6 +175,9 @@ class Worker:
         self.aborted_from_remote = {}
         self.logic_aborts = set()
         self.logic_aborts_from_remote = {}
+        self.sequencer.select_t_counter(self.t_counters.values())
+        self.t_counters = {}
+        self.networking.cleanup_after_epoch()
 
     def remote_wants_to_commit(self) -> bool:
         for ready_to_commit_event in self.ready_to_commit_events.values():
@@ -227,18 +243,27 @@ class Worker:
                 if message_type == 'RUN_FUN_REMOTE':
                     logging.warning('CALLED RUN FUN FROM PEER')
                     payload = self.unpack_run_payload(message)
+                    await self.scheduler.spawn(self.run_function(message['__T_ID__'],
+                                                                 payload,
+                                                                 ack_payload=deserialized_data['__ACK__']))
                 else:
                     logging.warning('CALLED RUN FUN RQ RS FROM PEER')
                     payload = self.unpack_run_payload(message, resp_adr)
-                await self.scheduler.spawn(self.run_function(message['__T_ID__'], payload))
+                    await self.scheduler.spawn(self.run_function(message['__T_ID__'],
+                                                                 payload))
             case 'RECEIVE_EXE_PLN':  # RECEIVE EXECUTION PLAN OF A DATAFLOW GRAPH
                 # This contains all the operators of a job assigned to this worker
                 await self.handle_execution_plan(message)
             case 'CMT':
-                remote_worker_id, aborted, logic_aborts = message
+                remote_worker_id, aborted, logic_aborts, remote_t_counter = message
                 self.ready_to_commit_events[remote_worker_id].set()
                 self.aborted_from_remote[remote_worker_id] = set(aborted)
                 self.logic_aborts_from_remote[remote_worker_id] = set(logic_aborts)
+                self.t_counters[remote_worker_id] = remote_t_counter
+            case 'ACK':
+                ack_id, fraction_str = message
+                self.networking.add_ack_fraction_str(ack_id, fraction_str)
+                logging.warning(f'ACK received for {ack_id} part: {fraction_str}')
             case _:
                 logging.error(f"Worker Service: Non supported command message type: {message_type}")
 
@@ -268,7 +293,7 @@ class Worker:
         await self.start_kafka_egress_producer()
         await self.scheduler.spawn(self.function_scheduler())
         logging.info(f"Worker TCP Server listening at 0.0.0.0:{SERVER_PORT} "
-                     f"IP:{socket.gethostbyname(socket.gethostname())}")
+                     f"IP:{self.networking.host_name}")
         while True:
             resp_adr, data = await self.router.read()
             deserialized_data: dict = self.networking.decode_message(data)
@@ -287,7 +312,7 @@ class Worker:
         self.id = await self.networking.send_message_request_response(
             DISCOVERY_HOST, DISCOVERY_PORT,
             {"__COM_TYPE__": 'REGISTER_WORKER',
-             "__MSG__": str(socket.gethostbyname(socket.gethostname()))},
+             "__MSG__": self.networking.host_name},
             Serializer.MSGPACK)
         self.sequencer.set_worker_id(self.id)
         logging.info(f"Worker id: {self.id}")

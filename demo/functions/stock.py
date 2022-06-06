@@ -16,7 +16,6 @@ class AddStock(StatefulFunction):
         item_data = await self.get(key)
         item_data['stock'] += stock
         await self.put(key, item_data)
-        return item_data
 
 
 class SubtractStock(StatefulFunction):
@@ -26,4 +25,3 @@ class SubtractStock(StatefulFunction):
         if item_data['stock'] < 0:
             raise NotEnoughStock()
         await self.put(key, item_data)
-        return item_data

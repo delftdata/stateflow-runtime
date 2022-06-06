@@ -58,7 +58,7 @@ asyncio.run(universalis.submit(g, user, order, stock))
 async def create_user():
     user_key: str = str(uuid.uuid4())
     user_name: str = f'user-{user_key}'
-    print(f'/user/create/{user_key}')
+    # print(f'/user/create/{user_key}')
     # await universalis.send_tcp_event(operator=user_operator,
     #                                  key=user_key,
     #                                  function=user.CreateUser(),
@@ -72,7 +72,7 @@ async def create_user():
 
 @app.post('/user/add_credit/<user_key>/<amount>')
 async def add_credit(user_key: str, amount: int):
-    print(f'/user/add_credit/{user_key}/{amount} ')
+    # print(f'/user/add_credit/{user_key}/{amount} ')
     # await universalis.send_tcp_event(user_operator, user_key, user.AddCredit(), (user_key, int(amount)))
     await universalis.send_kafka_event(user_operator, user_key, user.AddCredit(), (user_key, int(amount)))
     return Response('Credit added', status=200)
@@ -82,7 +82,7 @@ async def add_credit(user_key: str, amount: int):
 async def create_item():
     item_key: str = str(uuid.uuid4())
     item_name: str = f'item-{item_key}'
-    print(f'/stock/create/{item_key}')
+    # print(f'/stock/create/{item_key}')
     price: int = 1
     # await universalis.send_tcp_event(stock_operator, item_key, stock.CreateItem(), (item_key, item_name, price))
     await universalis.send_kafka_event(stock_operator, item_key, stock.CreateItem(), (item_key, item_name, price))
@@ -91,7 +91,7 @@ async def create_item():
 
 @app.post('/stock/add_stock/<item_key>/<amount>')
 async def add_stock(item_key: str, amount: int):
-    print(f'/stock/add_stock/{item_key}/{amount}')
+    # print(f'/stock/add_stock/{item_key}/{amount}')
     # await universalis.send_tcp_event(stock_operator, item_key, stock.AddStock(), (item_key, int(amount)))
     await universalis.send_kafka_event(stock_operator, item_key, stock.AddStock(), (item_key, int(amount)))
     return jsonify({'item_key': item_key})
@@ -99,7 +99,7 @@ async def add_stock(item_key: str, amount: int):
 
 @app.post('/order/create_order/<user_key>')
 async def create_order(user_key: str):
-    print(f'/order/create_order/{user_key}')
+    # print(f'/order/create_order/{user_key}')
     order_key: str = str(uuid.uuid4())
     # await universalis.send_tcp_event(order_operator, order_key, order.CreateOrder(), (order_key, user_key))
     await universalis.send_kafka_event(order_operator, order_key, order.CreateOrder(), (order_key, user_key))
@@ -108,7 +108,7 @@ async def create_order(user_key: str):
 
 @app.post('/order/add_item/<order_key>/<item_key>')
 async def add_item(order_key: str, item_key: str):
-    print(f'/order/add_item/{order_key}/{item_key}')
+    # print(f'/order/add_item/{order_key}/{item_key}')
     quantity, cost = 1, 1
     # await universalis.send_tcp_event(order_operator, order_key, order.AddItem(), (order_key, item_key, quantity, cost))
     await universalis.send_kafka_event(order_operator, order_key, order.AddItem(), (order_key, item_key, quantity, cost))
@@ -117,7 +117,7 @@ async def add_item(order_key: str, item_key: str):
 
 @app.post('/order/checkout/<order_key>')
 async def checkout_order(order_key: str):
-    print(f'/order/checkout/{order_key}')
+    # print(f'/order/checkout/{order_key}')
     # await universalis.send_tcp_event(order_operator, order_key, order.Checkout(), (order_key,))
     await universalis.send_kafka_event(order_operator, order_key, order.Checkout(), (order_key,))
     return Response('Checkout started', status=200)

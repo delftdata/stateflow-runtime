@@ -1,5 +1,8 @@
+import asyncio
+import fractions
 import uuid
 from abc import abstractmethod
+from typing import Awaitable
 
 from universalis.common.logging import logging
 from universalis.common.networking import NetworkingManager
@@ -42,10 +45,16 @@ class StatefulFunction(Function):
 
     def __init__(self):
         super().__init__()
+        self.async_remote_calls: list[tuple[str, str, object, tuple]] = []
 
     async def __call__(self, *args, **kwargs):
         try:
-            return await self.run(*args)
+            res = await self.run(*args)
+            if 'ack_share' in kwargs:
+                n_remote_calls = await self.send_async_calls(ack_share=kwargs['ack_share'])
+                return res, n_remote_calls
+            else:
+                return res, 0
         except Exception as e:
             logging.error(str(e))
             return e
@@ -56,16 +65,32 @@ class StatefulFunction(Function):
     async def put(self, key, value):
         await self.state.put(key, value, self.t_id)
 
-    async def call_remote_function_no_response(self, operator_name, function_name, key, params):
+    async def send_async_calls(self, ack_share):
+        n_remote_calls: int = len(self.async_remote_calls)
+        if n_remote_calls > 0:
+            ack_payload = await self.networking.prepare_function_chain(
+                ack_share=str(fractions.Fraction(f'1/{n_remote_calls}') * fractions.Fraction(ack_share)))
+            remote_calls: list[Awaitable] = [self.call_remote_function_no_response(*entry, ack_payload=ack_payload)
+                                             for entry in self.async_remote_calls]
+            logging.warning('Sending chain calls...')
+            await asyncio.gather(*remote_calls)
+        return n_remote_calls
+
+    def call_remote_async(self, operator_name, function_name, key, params):
+        self.async_remote_calls.append((operator_name, function_name, key, params))
+
+    async def call_remote_function_no_response(self, operator_name, function_name, key, params, ack_payload=None):
         partition, payload, operator_host, operator_port = await self.prepare_message_transmission(operator_name,
                                                                                                    key,
                                                                                                    function_name,
                                                                                                    params)
-        await self.networking.send_message(operator_host,
-                                           operator_port,
-                                           {"__COM_TYPE__": 'RUN_FUN_REMOTE',
-                                            "__MSG__": payload},
-                                           Serializer.MSGPACK)
+
+        await self.networking.send_message_ack(operator_host,
+                                               operator_port,
+                                               ack_payload,
+                                               {"__COM_TYPE__": 'RUN_FUN_REMOTE',
+                                                "__MSG__": payload},
+                                               Serializer.MSGPACK)
 
     async def call_remote_function_request_response(self, operator_name, function_name, key, params):
         partition, payload, operator_host, operator_port = await self.prepare_message_transmission(operator_name,
