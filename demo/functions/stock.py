@@ -23,5 +23,5 @@ class SubtractStock(StatefulFunction):
         item_data = await self.get(key)
         item_data['stock'] -= stock
         if item_data['stock'] < 0:
-            raise NotEnoughStock()
+            raise NotEnoughStock(f'Not enough stock: {item_data["stock"]} for item: {key}')
         await self.put(key, item_data)

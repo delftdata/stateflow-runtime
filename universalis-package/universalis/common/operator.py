@@ -34,20 +34,23 @@ class Operator(BaseOperator):
                            ack_payload: tuple[str, int, str],
                            *params) -> Awaitable:
         function_copy = copy(self.functions[function_name])
-        function_copy.attach_state(self.state)
-        function_copy.attach_networking(self.networking)
-        function_copy.set_dns(self.dns)
-        function_copy.set_timestamp(timestamp)
-        function_copy.set_t_id(t_id)
-        logging.warning(f'PROCESSING FUNCTION -> {function_name} of operator: {self.name} with params: {params}')
+        function_copy.set_copy(self.state, self.networking, timestamp, self.dns, t_id)
+        logging.info(f'PROCESSING FUNCTION -> {function_name}:{t_id} of operator: {self.name} with params: {params}')
         if ack_payload is not None:
             # part of a chain (not root)
             ack_host, ack_id, fraction_str = ack_payload
-            resp, n_remote_calls = await function_copy(*params, ack_share=fraction_str)
-            if n_remote_calls == 0:
-                # final link of the chain (send ack share)
+            resp = await function_copy(*params, ack_share=fraction_str)
+            if not isinstance(resp, Exception):
+                resp, n_remote_calls = resp
+                if n_remote_calls == 0:
+                    # final link of the chain (send ack share)
+                    await self.networking.send_message(ack_host, 8888, {"__COM_TYPE__": 'ACK',
+                                                                        "__MSG__": (ack_id, fraction_str)},
+                                                       Serializer.MSGPACK)
+            else:
+                # Send chain failure
                 await self.networking.send_message(ack_host, 8888, {"__COM_TYPE__": 'ACK',
-                                                                    "__MSG__": (ack_id, fraction_str)},
+                                                                    "__MSG__": (ack_id, '-1')},
                                                    Serializer.MSGPACK)
         else:
             resp = await function_copy(*params)

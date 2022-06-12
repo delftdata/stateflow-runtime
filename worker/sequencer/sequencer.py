@@ -12,7 +12,6 @@ class Sequencer:
         self.t_counter = 0
         self.worker_id = -1
         self.n_workers = -1
-        self.prev_epoch_idx = 0
         self.epoch_counter = 0
         self.distributed_log_lock = asyncio.Lock()
 
@@ -26,6 +25,7 @@ class Sequencer:
         async with self.distributed_log_lock:
             t_id = self.worker_id + self.t_counter * self.n_workers
             self.t_counter += 1
+            logging.info(f'Sequencing message: {message.key} with t_id: {t_id}')
             self.distributed_log.add(SequencedItem(t_id, message))
 
     async def sequence_aborts_for_next_epoch(self, aborted: set):
@@ -36,22 +36,11 @@ class Sequencer:
     async def get_epoch(self) -> set[SequencedItem]:
         async with self.distributed_log_lock:
             if len(self.distributed_log) > 0:
-                logging.info(f"Sequencer Epoch: {self.epoch_counter} with items: {self.distributed_log}")
-                self.prev_epoch_idx = self.t_counter
-                self.epoch_counter += 1
                 epoch = self.distributed_log
                 self.distributed_log = set()
                 return epoch
 
-    async def increment_epoch(self):
+    async def increment_epoch(self, remote_t_counters):
         async with self.distributed_log_lock:
             self.epoch_counter += 1
-
-    def select_t_counter(self, remote):
-        self.t_counter = max(*remote, self.t_counter)
-
-    def cleanup(self):
-        self.distributed_log = set()
-        self.t_counter = 0
-        self.prev_epoch_idx = 0
-        self.epoch_counter = 0
+            self.t_counter = max(*remote_t_counters, self.t_counter)

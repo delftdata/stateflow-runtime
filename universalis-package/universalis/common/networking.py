@@ -18,20 +18,21 @@ class NetworkingManager:
         self.locks: dict[tuple[str, int], asyncio.Lock] = {}
         self.host_name: str = str(socket.gethostbyname(socket.gethostname()))
         self.waited_ack_events: dict[int, asyncio.Event] = {}  # event_id: ack_event
-        self.ack_id: int = 0
         self.ack_fraction: dict[int, fractions.Fraction] = {}
         self.waited_ack_events_lock: asyncio.Lock = asyncio.Lock()
 
     def cleanup_after_epoch(self):
         self.waited_ack_events = {}
         self.ack_fraction = {}
-        self.ack_id = 0
 
-    def add_ack_fraction_str(self, ack_id: int, fraction_str: str):
-        self.ack_fraction[ack_id] += fractions.Fraction(fraction_str)
-        if self.ack_fraction[ack_id] == 1:
-            # All ACK parts have been gathered
-            self.waited_ack_events[ack_id].set()
+    async def add_ack_fraction_str(self, ack_id: int, fraction_str: str):
+        async with self.waited_ack_events_lock:
+            self.ack_fraction[ack_id] += fractions.Fraction(fraction_str)
+            logging.info(f'Ack fraction {fraction_str} received for: {ack_id} new value {self.ack_fraction[ack_id]}')
+            if self.ack_fraction[ack_id] == 1:
+                # All ACK parts have been gathered
+                logging.info(f'All acks have been gathered for ack_id: {ack_id} {self.ack_fraction[ack_id]}')
+                self.waited_ack_events[ack_id].set()
 
     def close_all_connections(self):
         for stream in self.conns.values():
@@ -65,13 +66,16 @@ class NetworkingManager:
         msg = self.encode_message(msg, serializer)
         self.conns[(host, port)].write((msg, ))
 
-    async def prepare_function_chain(self, ack_share) -> tuple[str, int, str]:
+    async def prepare_function_chain(self, ack_share: str, t_id: int) -> tuple[str, int, str]:
         async with self.waited_ack_events_lock:
-            ack_payload = (self.host_name, self.ack_id, ack_share)
-            self.waited_ack_events[self.ack_id] = asyncio.Event()
-            self.ack_fraction[self.ack_id] = fractions.Fraction(0)
-            self.ack_id += 1
+            ack_payload = (self.host_name, t_id, ack_share)
+            self.waited_ack_events[t_id] = asyncio.Event()
+            self.ack_fraction[t_id] = fractions.Fraction(0)
         return ack_payload
+
+    async def abort_chain(self, aborted_t_id: int):
+        async with self.waited_ack_events_lock:
+            self.waited_ack_events[aborted_t_id].set()
 
     async def send_message_ack(self,
                                host,

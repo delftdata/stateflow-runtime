@@ -23,5 +23,5 @@ class SubtractCredit(StatefulFunction):
         user_data = await self.get(key)
         user_data['credit'] -= credit
         if user_data['credit'] < 0:
-            raise NotEnoughCredit()
+            raise NotEnoughCredit(f'Not enough credit: {user_data["credit"]} for user: {key}')
         await self.put(key, user_data)

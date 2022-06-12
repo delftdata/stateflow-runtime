@@ -2,6 +2,7 @@ import asyncio
 import itertools
 import os
 import time
+from timeit import default_timer as timer
 
 import aiojobs
 import aiozmq
@@ -30,21 +31,11 @@ from worker.sequencer.sequencer import Sequencer
 
 # TODO error conflicts should go to the egress as 400
 
-# TODO Fix the wait peer, cannot wait forever (deadlock)
-
 # TODO replace quart with sanic? add setup endpoint with quart or before process start sanic
-
-# TODO How to wait on sub-transactions?
-
-# TODO What happens with the read uncommitted?
 
 # TODO fix operator 8888  fixed port
 
-# TODo explore run_in_excecutor for cpu bound tasks
-
-# TODO SYNCHRONIZE STUFF!!!!!!!!!!
-
-# TODO Find why the acks are not getting distributed
+# TODO explore run_in_excecutor for cpu bound tasks
 
 SERVER_PORT = 8888
 DISCOVERY_HOST = os.environ['DISCOVERY_HOST']
@@ -75,6 +66,7 @@ class Worker:
         self.logic_aborts_from_remote: dict[int, set[int]] = {}
         self.local_state: InMemoryOperatorState | RedisOperatorState | Stateless = Stateless()
         self.t_counters: dict[int, int] = {}
+        self.processing_lock = asyncio.Lock()
 
     def attach_state_to_operator(self, operator: Operator):
         if operator.operator_state_backend == LocalStateBackend.DICT:
@@ -98,6 +90,7 @@ class Worker:
         if isinstance(response, Exception):
             self.logic_aborts.add(t_id)
             response = str(response)
+            logging.error(f'Application logic error: {response}')
 
         if payload.response_socket:
             self.router.write((payload.response_socket, self.networking.encode_message(response,
@@ -118,56 +111,67 @@ class Worker:
 
     async def function_scheduler(self):
         while True:
-            await asyncio.sleep(EPOCH_INTERVAL)  # EPOCH TIMER
-            sequence: set[SequencedItem] = await self.sequencer.get_epoch()  # GET SEQUENCE
-            if sequence is not None:
-                # Run all the epochs functions concurrently
-                logging.warning(f'Running functions...')
-                run_function_tasks = [self.run_function(sequenced_item.t_id, sequenced_item.payload)
-                                      for sequenced_item in sequence]
-                await asyncio.gather(*run_function_tasks)
-                # Wait for chains to finish
-                logging.warning(f'Waiting on chained functions...')
-                chain_acks = [ack.wait()
-                              for ack in self.networking.waited_ack_events.values()]
-                await asyncio.gather(*chain_acks)
-                # Check for local state conflicts
-                logging.warning(f'Checking conflicts...')
-                aborted: set[int] = self.local_state.check_conflicts()
-                # Notify peers that we are ready to commit
-                logging.warning(f'Notify peers...')
-                await self.send_commit_to_peers(aborted)
-                # Wait for remote to be ready to commit
-                wait_remote_commits_task = [event.wait()
-                                            for event in self.ready_to_commit_events.values()]
-                logging.warning(f'Waiting on remote commits...')
-                await asyncio.gather(*wait_remote_commits_task)
-                # Gather the different abort messages (application logic, concurrency)
-                remote_aborted: set[int] = set(
-                    itertools.chain.from_iterable(self.aborted_from_remote.values())
-                )
-                logic_aborts_everywhere: set[int] = set(
-                    itertools.chain.from_iterable(self.logic_aborts_from_remote.values())
-                )
-                logic_aborts_everywhere.union(self.logic_aborts)
-                # Commit the local while taking into account the aborts from remote
-                logging.warning(f'Sequence committed!')
-                await self.local_state.commit(remote_aborted.union(logic_aborts_everywhere))
-                # Cleanup
-                self.cleanup_after_epoch()
-                # Re-sequence the aborted transactions due to concurrency
-                await self.sequencer.sequence_aborts_for_next_epoch(aborted.union(remote_aborted))
-                logging.warning(f'Epoch: {self.sequencer.epoch_counter - 1} done')
-            elif sequence is None and self.remote_wants_to_commit():
-                await self.send_commit_to_peers(set())
-                # Wait for remote to be ready to commit
-                wait_remote_commits_task = [event.wait()
-                                            for event in self.ready_to_commit_events.values()]
-                logging.warning(f'Waiting on remote commits...')
-                await asyncio.gather(*wait_remote_commits_task)
-                logging.warning(f'Epoch: {self.sequencer.epoch_counter} done NOTHING TO COMMIT')
-                await self.sequencer.increment_epoch()
-                self.cleanup_after_epoch()
+            async with self.processing_lock:
+                await asyncio.sleep(EPOCH_INTERVAL)  # EPOCH TIMER
+                sequence: set[SequencedItem] = await self.sequencer.get_epoch()  # GET SEQUENCE
+                if sequence is not None:
+                    # Run all the epochs functions concurrently
+                    epoch_start = timer()
+                    logging.info(f'Running functions... with sequence: {sequence}')
+                    run_function_tasks = [self.run_function(sequenced_item.t_id, sequenced_item.payload)
+                                          for sequenced_item in sequence]
+                    await asyncio.gather(*run_function_tasks)
+                    # Wait for chains to finish
+                    logging.info(f'Waiting on chained functions...')
+                    chain_acks = [ack.wait()
+                                  for ack in self.networking.waited_ack_events.values()]
+                    await asyncio.gather(*chain_acks)
+                    # Check for local state conflicts
+                    logging.info(f'Checking conflicts...')
+                    aborted: set[int] = self.local_state.check_conflicts()
+                    # Notify peers that we are ready to commit
+                    logging.info(f'Notify peers...')
+                    await self.send_commit_to_peers(aborted)
+                    # Wait for remote to be ready to commit
+                    wait_remote_commits_task = [event.wait()
+                                                for event in self.ready_to_commit_events.values()]
+                    logging.info(f'Waiting on remote commits...')
+                    await asyncio.gather(*wait_remote_commits_task)
+                    # Gather the different abort messages (application logic, concurrency)
+                    remote_aborted: set[int] = set(
+                        itertools.chain.from_iterable(self.aborted_from_remote.values())
+                    )
+                    logic_aborts_everywhere: set[int] = set(
+                        itertools.chain.from_iterable(self.logic_aborts_from_remote.values())
+                    )
+                    logic_aborts_everywhere.union(self.logic_aborts)
+                    # Commit the local while taking into account the aborts from remote
+                    logging.info(f'Sequence committed!')
+                    await self.local_state.commit(remote_aborted.union(logic_aborts_everywhere))
+                    # Cleanup
+                    await self.sequencer.increment_epoch(self.t_counters.values())
+                    self.cleanup_after_epoch()
+                    # Re-sequence the aborted transactions due to concurrency
+                    await self.sequencer.sequence_aborts_for_next_epoch(aborted.union(remote_aborted))
+                    epoch_end = timer()
+                    logging.warning(f'Epoch: {self.sequencer.epoch_counter - 1} done in '
+                                    f'{round((epoch_end - epoch_start)*1000, 4)}ms '
+                                    f'processed: {len(run_function_tasks)} functions '
+                                    f'initiated {len(chain_acks)} chains')
+                elif sequence is None and self.remote_wants_to_commit():
+                    epoch_start = timer()
+                    await self.send_commit_to_peers(set())
+                    # Wait for remote to be ready to commit
+                    wait_remote_commits_task = [event.wait()
+                                                for event in self.ready_to_commit_events.values()]
+                    logging.info(f'Waiting on remote commits...')
+                    await asyncio.gather(*wait_remote_commits_task)
+                    await self.sequencer.increment_epoch(self.t_counters.values())
+                    self.cleanup_after_epoch()
+                    epoch_end = timer()
+                    logging.warning(f'Epoch: {self.sequencer.epoch_counter - 1} done in '
+                                    f'{round((epoch_end - epoch_start)*1000, 4)}ms '
+                                    f'processed 0 functions directly')
 
     def cleanup_after_epoch(self):
         for event in self.ready_to_commit_events.values():
@@ -175,7 +179,6 @@ class Worker:
         self.aborted_from_remote = {}
         self.logic_aborts = set()
         self.logic_aborts_from_remote = {}
-        self.sequencer.select_t_counter(self.t_counters.values())
         self.t_counters = {}
         self.networking.cleanup_after_epoch()
 
@@ -214,11 +217,12 @@ class Worker:
             # Consume messages
             wait_time_ms = int(EPOCH_INTERVAL*1000)
             while True:
-                result = await consumer.getmany(timeout_ms=wait_time_ms)
-                for _, messages in result.items():
-                    if messages:
-                        for message in messages:
-                            await self.handle_message_from_kafka(message)
+                async with self.processing_lock:
+                    result = await consumer.getmany(timeout_ms=wait_time_ms)
+                    for _, messages in result.items():
+                        if messages:
+                            for message in messages:
+                                await self.handle_message_from_kafka(message)
         finally:
             await consumer.stop()
 
@@ -230,7 +234,7 @@ class Worker:
         message = deserialized_data['__MSG__']
         if message_type == 'RUN_FUN':
             run_func_payload: RunFuncPayload = self.unpack_run_payload(message)
-            logging.warning(f'SEQ FROM KAFKA: {run_func_payload.function_name}')
+            logging.info(f'SEQ FROM KAFKA: {run_func_payload.function_name} {run_func_payload.key}')
             await self.sequencer.sequence(run_func_payload)
         else:
             logging.error(f"Invalid message type: {message_type} passed to KAFKA")
@@ -241,13 +245,13 @@ class Worker:
         match message_type:
             case 'RUN_FUN_REMOTE' | 'RUN_FUN_RQ_RS_REMOTE':
                 if message_type == 'RUN_FUN_REMOTE':
-                    logging.warning('CALLED RUN FUN FROM PEER')
+                    logging.info('CALLED RUN FUN FROM PEER')
                     payload = self.unpack_run_payload(message)
                     await self.scheduler.spawn(self.run_function(message['__T_ID__'],
                                                                  payload,
                                                                  ack_payload=deserialized_data['__ACK__']))
                 else:
-                    logging.warning('CALLED RUN FUN RQ RS FROM PEER')
+                    logging.info('CALLED RUN FUN RQ RS FROM PEER')
                     payload = self.unpack_run_payload(message, resp_adr)
                     await self.scheduler.spawn(self.run_function(message['__T_ID__'],
                                                                  payload))
@@ -262,8 +266,12 @@ class Worker:
                 self.t_counters[remote_worker_id] = remote_t_counter
             case 'ACK':
                 ack_id, fraction_str = message
-                self.networking.add_ack_fraction_str(ack_id, fraction_str)
-                logging.warning(f'ACK received for {ack_id} part: {fraction_str}')
+                if fraction_str != '-1':
+                    await self.networking.add_ack_fraction_str(ack_id, fraction_str)
+                    logging.info(f'ACK received for {ack_id} part: {fraction_str}')
+                else:
+                    logging.info(f'ABORT ACK received for {ack_id}')
+                    await self.networking.abort_chain(ack_id)
             case _:
                 logging.error(f"Worker Service: Non supported command message type: {message_type}")
 

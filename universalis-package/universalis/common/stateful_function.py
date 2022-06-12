@@ -42,18 +42,24 @@ class StatefulFunction(Function):
     dns: dict[str, dict[str, tuple[str, int]]]
     timestamp: int  # timestamp
     t_id: int  # transaction id
+    async_remote_calls: list[tuple[str, str, object, tuple]]
 
     def __init__(self):
         super().__init__()
-        self.async_remote_calls: list[tuple[str, str, object, tuple]] = []
 
     async def __call__(self, *args, **kwargs):
         try:
             res = await self.run(*args)
             if 'ack_share' in kwargs:
+                # middle of the chain
                 n_remote_calls = await self.send_async_calls(ack_share=kwargs['ack_share'])
                 return res, n_remote_calls
+            elif len(self.async_remote_calls) > 0:
+                # start of the chain
+                n_remote_calls = await self.send_async_calls()
+                return res, n_remote_calls
             else:
+                # No chain or end
                 return res, 0
         except Exception as e:
             logging.error(str(e))
@@ -65,14 +71,15 @@ class StatefulFunction(Function):
     async def put(self, key, value):
         await self.state.put(key, value, self.t_id)
 
-    async def send_async_calls(self, ack_share):
+    async def send_async_calls(self, ack_share=1):
         n_remote_calls: int = len(self.async_remote_calls)
         if n_remote_calls > 0:
             ack_payload = await self.networking.prepare_function_chain(
-                ack_share=str(fractions.Fraction(f'1/{n_remote_calls}') * fractions.Fraction(ack_share)))
+                str(fractions.Fraction(f'1/{n_remote_calls}') * fractions.Fraction(ack_share)), self.t_id)
             remote_calls: list[Awaitable] = [self.call_remote_function_no_response(*entry, ack_payload=ack_payload)
                                              for entry in self.async_remote_calls]
-            logging.warning('Sending chain calls...')
+            logging.info(f'Sending chain calls for function: {self.name} with remote call number: {n_remote_calls}'
+                         f'and calls: {self.async_remote_calls}')
             await asyncio.gather(*remote_calls)
         return n_remote_calls
 
@@ -105,20 +112,18 @@ class StatefulFunction(Function):
                                                                    Serializer.MSGPACK)
         return resp
 
-    def attach_state(self, operator_state: State):
+    def set_copy(self,
+                 operator_state: State,
+                 networking: NetworkingManager,
+                 timestamp: int,
+                 dns: dict[str, dict[str, tuple[str, int]]],
+                 t_id: int):
         self.state = operator_state
-
-    def attach_networking(self, networking: NetworkingManager):
         self.networking = networking
-
-    def set_timestamp(self, timestamp: int):
         self.timestamp = timestamp
-
-    def set_dns(self, dns: dict[str, dict[str, tuple[str, int]]]):
         self.dns = dns
-
-    def set_t_id(self, t_id: int):
         self.t_id = t_id
+        self.async_remote_calls = []
 
     async def prepare_message_transmission(self, operator_name: str, key, function_name: str, params):
         if operator_name not in self.dns:
