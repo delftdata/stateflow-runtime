@@ -1,3 +1,5 @@
+import logging
+
 from universalis.common.operator import StatefulFunction
 
 
@@ -16,12 +18,15 @@ class AddStock(StatefulFunction):
         item_data = await self.get(key)
         item_data['stock'] += stock
         await self.put(key, item_data)
+        return item_data
 
 
 class SubtractStock(StatefulFunction):
     async def run(self, key: str, stock: int):
         item_data = await self.get(key)
+        logging.warning(item_data)
         item_data['stock'] -= stock
         if item_data['stock'] < 0:
             raise NotEnoughStock(f'Not enough stock: {item_data["stock"]} for item: {key}')
         await self.put(key, item_data)
+        return item_data

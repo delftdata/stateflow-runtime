@@ -12,6 +12,7 @@ class AddItem(StatefulFunction):
         order_data = await self.get(order_key)
         order_data['items'].append({'item_key': item_key, 'quantity': quantity, 'cost': cost})
         await self.put(order_key, order_data)
+        return order_data
 
 
 class Checkout(StatefulFunction):
@@ -31,3 +32,4 @@ class Checkout(StatefulFunction):
                                function_name='SubtractCredit',
                                key=order_data['user_key'],
                                params=(order_data['user_key'], total_cost))
+        return order_data

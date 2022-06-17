@@ -17,7 +17,7 @@ COPY --chown=universalis demo .
 ENV PYTHONPATH /usr/local/universalis
 
 USER universalis
-CMD ["hypercorn", "-b", "0.0.0.0:5000", "app:app", "-w", "1"]
+CMD ["sanic", "app.app", "--host=0.0.0.0", "--port=5000", "--workers=4"]
 
-# default flask port
+# default port
 EXPOSE 5000

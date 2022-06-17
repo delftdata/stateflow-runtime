@@ -13,9 +13,9 @@ logging.basicConfig(level=logging.INFO,
                     datefmt='%I:%M:%S')
 logger = logging.getLogger(__name__)
 
-NUMBER_0F_ITEMS = 1000
-NUMBER_OF_USERS = 1000
-NUMBER_OF_ORDERS = 1000
+NUMBER_0F_ITEMS = 10000
+NUMBER_OF_USERS = 10000
+NUMBER_OF_ORDERS = 10000
 
 ORDER_URL = STOCK_URL = PAYMENT_URL = 'http://localhost:5000'
 
@@ -96,8 +96,18 @@ async def create_orders(session, item_ids, user_ids, number_of_orders):
     return order_ids
 
 
+async def submit_dataflow_graph(session):
+    submit_dataflow_graph_url = f"{ORDER_URL}/submit_dataflow_graph"
+    status = await asyncio.ensure_future(post_and_get_status(session, submit_dataflow_graph_url))
+    logger.info(f"Dataflow graph submission status: {status}")
+
+
 async def populate_databases():
     async with aiohttp.ClientSession() as session:
+        logger.info("Submitting dataflow graph ...")
+        await submit_dataflow_graph(session)
+        logger.info("Dataflow graph submitted")
+        time.sleep(2)
         start = timer()
         logger.info("Creating items ...")
         item_ids = await create_items(session, NUMBER_0F_ITEMS)
