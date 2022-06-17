@@ -18,13 +18,14 @@ class NotAStateflowGraph(Exception):
 
 class Coordinator:
 
-    def __init__(self):
+    def __init__(self, server_port: int):
         self.worker_counter: int = 0
         self.workers: dict[int, tuple[str, int]] = {}
+        self.server_port = server_port
 
     def register_worker(self, worker_ip: str):
         self.worker_counter += 1
-        self.workers[self.worker_counter] = (worker_ip, 8888)
+        self.workers[self.worker_counter] = (worker_ip, self.server_port)
         return self.worker_counter
 
     async def submit_stateflow_graph(self,

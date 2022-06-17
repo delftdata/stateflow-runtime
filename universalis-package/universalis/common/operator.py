@@ -7,7 +7,8 @@ from .logging import logging
 from .base_operator import BaseOperator
 from .function import Function
 from .stateful_function import StatefulFunction
-from .local_state_backends import LocalStateBackend
+
+SERVER_PORT = 8888
 
 
 class NotAFunctionError(Exception):
@@ -18,24 +19,23 @@ class Operator(BaseOperator):
 
     def __init__(self,
                  name: str,
-                 n_partitions: int = 1,
-                 operator_state_backend: LocalStateBackend = LocalStateBackend.DICT):
+                 n_partitions: int = 1):
         super().__init__(name, n_partitions)
         self.state = None
         self.networking = None
-        self.operator_state_backend: LocalStateBackend = operator_state_backend
         self.functions: dict[str, Union[Function, StatefulFunction]] = {}
         self.dns: dict[str, dict[str, tuple[str, int]]] = {}  # where the other functions exist
 
     async def run_function(self,
                            t_id: int,
+                           request_id: str,
                            timestamp: int,
                            function_name: str,
                            ack_payload: tuple[str, int, str],
                            *params) -> Awaitable:
         function_copy = copy(self.functions[function_name])
-        function_copy.set_copy(self.state, self.networking, timestamp, self.dns, t_id)
-        logging.info(f'PROCESSING FUNCTION -> {function_name}:{t_id} of operator: {self.name} with params: {params}')
+        function_copy.set_copy(self.state, self.networking, timestamp, self.dns, t_id, request_id)
+        logging.warning(f'PROCESSING FUNCTION -> {function_name}:{t_id} of operator: {self.name} with params: {params}')
         if ack_payload is not None:
             # part of a chain (not root)
             ack_host, ack_id, fraction_str = ack_payload
@@ -44,13 +44,13 @@ class Operator(BaseOperator):
                 resp, n_remote_calls = resp
                 if n_remote_calls == 0:
                     # final link of the chain (send ack share)
-                    await self.networking.send_message(ack_host, 8888, {"__COM_TYPE__": 'ACK',
-                                                                        "__MSG__": (ack_id, fraction_str)},
+                    await self.networking.send_message(ack_host, SERVER_PORT, {"__COM_TYPE__": 'ACK',
+                                                                               "__MSG__": (ack_id, fraction_str)},
                                                        Serializer.MSGPACK)
             else:
                 # Send chain failure
-                await self.networking.send_message(ack_host, 8888, {"__COM_TYPE__": 'ACK',
-                                                                    "__MSG__": (ack_id, '-1')},
+                await self.networking.send_message(ack_host, SERVER_PORT, {"__COM_TYPE__": 'ACK',
+                                                                           "__MSG__": (ack_id, '-1')},
                                                    Serializer.MSGPACK)
         else:
             resp = await function_copy(*params)
@@ -75,4 +75,5 @@ class Operator(BaseOperator):
 
     def register_stateful_functions(self, *functions: StatefulFunction):
         for function in functions:
+            function.set_operator_name(self.name)
             self.register_stateful_function(function)

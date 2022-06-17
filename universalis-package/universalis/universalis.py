@@ -1,9 +1,12 @@
+import asyncio
 import time
+import uuid
+
 import cloudpickle
 from aiokafka import AIOKafkaProducer
 from kafka.errors import KafkaConnectionError
 
-from universalis.common.serialization import Serializer
+from universalis.common.serialization import Serializer, msgpack_serialization
 from universalis.common.logging import logging
 from universalis.common.networking import NetworkingManager
 from universalis.common.stateflow_graph import StateflowGraph
@@ -34,6 +37,8 @@ class Universalis:
         elif ingress_type == IngressTypes.KAFKA:
             self.kafka_url = kafka_url
             self.kafka_producer = None
+            asyncio.get_event_loop().create_task(self.start_kafka_producer())
+            logging.info(f'KAFKA INITIALIZED')
 
     async def submit(self, stateflow_graph: StateflowGraph, *modules):
         logging.info(f'Submitting Stateflow graph: {stateflow_graph.name}')
@@ -43,7 +48,6 @@ class Universalis:
             cloudpickle.register_pickle_by_value(module)
         await self.send_execution_graph(stateflow_graph)
         logging.info(f'Submission of Stateflow graph: {stateflow_graph.name} completed')
-        time.sleep(0.05)  # Sleep for 50ms to allow for the graph to setup
 
     async def send_tcp_event(self,
                              operator: BaseOperator,
@@ -58,7 +62,7 @@ class Universalis:
                  '__FUN_NAME__': function.name,
                  '__PARAMS__': params,
                  '__TIMESTAMP__': timestamp}
-
+        logging.info(event)
         await self.networking_manager.send_message(self.ingress_that_serves.host,
                                                    self.ingress_that_serves.port,
                                                    {"__COM_TYPE__": 'REMOTE_FUN_CALL',
@@ -69,25 +73,23 @@ class Universalis:
                                operator: BaseOperator,
                                key,
                                function: StatefulFunction,
-                               params: tuple,
-                               timestamp: int = None):
-        if self.kafka_producer is None:
-            await self.start_kafka_producer()
-        if timestamp is None:
-            timestamp = time.time_ns()
-        partition: int = int(make_key_hashable(key)) % operator.n_partitions
+                               params: tuple):
+        partition: int = make_key_hashable(key) % operator.n_partitions
         event = {'__OP_NAME__': operator.name,
                  '__KEY__': key,
                  '__FUN_NAME__': function.name,
                  '__PARAMS__': params,
-                 '__PARTITION__': partition,
-                 '__TIMESTAMP__': timestamp}
-        await self.kafka_producer.send_and_wait(operator.name,
-                                                value=event,
-                                                partition=partition)
+                 '__PARTITION__': partition}
+        request_id = str(uuid.uuid4())
+        msg = await self.kafka_producer.send_and_wait(operator.name,
+                                                      key=request_id,
+                                                      value=event,
+                                                      partition=partition)
+        print(f'ID: {request_id} | {msg}')
 
     async def start_kafka_producer(self):
         self.kafka_producer = AIOKafkaProducer(bootstrap_servers=[self.kafka_url],
+                                               key_serializer=msgpack_serialization,
                                                value_serializer=lambda event: self.networking_manager.encode_message(
                                                    {"__COM_TYPE__": 'RUN_FUN', "__MSG__": event},
                                                    serializer=Serializer.MSGPACK),
@@ -100,9 +102,13 @@ class Universalis:
                 logging.info("Waiting for Kafka")
                 continue
             break
+        logging.info(f'KAFKA PRODUCER STARTED')
 
     async def send_execution_graph(self, stateflow_graph: StateflowGraph):
         await self.networking_manager.send_message(self.coordinator_adr,
                                                    self.coordinator_port,
                                                    {"__COM_TYPE__": 'SEND_EXECUTION_GRAPH',
                                                     "__MSG__": stateflow_graph})
+
+    async def close(self):
+        await self.kafka_producer.stop()

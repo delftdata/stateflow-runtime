@@ -36,7 +36,8 @@ class RoundRobin(BaseScheduler):
                                              {"__COM_TYPE__": 'RECEIVE_EXE_PLN',
                                               "__MSG__": (operator_partitions,
                                                           operator_partition_locations,
-                                                          workers)}))
+                                                          workers,
+                                                          execution_graph.operator_state_backend)}))
             for worker, operator_partitions in worker_assignments.items()]
 
         await asyncio.gather(*tasks)

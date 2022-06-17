@@ -1,5 +1,6 @@
 import asyncio
 import fractions
+import traceback
 import uuid
 from abc import abstractmethod
 from typing import Awaitable
@@ -24,15 +25,15 @@ class StateNotAttachedError(Exception):
     pass
 
 
-def make_key_hashable(key):
-    if isinstance(key, str):
+def make_key_hashable(key) -> int:
+    if isinstance(key, int):
+        return key
+    elif isinstance(key, str):
         try:
-            key = uuid.UUID(key)  # uuid type given by the user
+            return uuid.UUID(key).int  # uuid type given by the user
         except ValueError:
-            key = uuid.uuid5(uuid.NAMESPACE_DNS, key)  # str that we hash to SHA-1
-    elif not isinstance(key, int):
-        raise NonSupportedKeyType()  # if not int, str or uuid throw exception
-    return key
+            return uuid.uuid5(uuid.NAMESPACE_DNS, key).int  # str that we hash to SHA-1
+    raise NonSupportedKeyType()  # if not int, str or uuid throw exception
 
 
 class StatefulFunction(Function):
@@ -43,6 +44,8 @@ class StatefulFunction(Function):
     timestamp: int  # timestamp
     t_id: int  # transaction id
     async_remote_calls: list[tuple[str, str, object, tuple]]
+    request_id: str
+    operator_name: str
 
     def __init__(self):
         super().__init__()
@@ -62,14 +65,14 @@ class StatefulFunction(Function):
                 # No chain or end
                 return res, 0
         except Exception as e:
-            logging.error(str(e))
+            logging.error(traceback.format_exc())
             return e
 
     async def get(self, key):
-        return await self.state.get(key, self.t_id)
+        return await self.state.get(key, self.t_id, self.operator_name)
 
     async def put(self, key, value):
-        await self.state.put(key, value, self.t_id)
+        await self.state.put(key, value, self.t_id, self.operator_name)
 
     async def send_async_calls(self, ack_share=1):
         n_remote_calls: int = len(self.async_remote_calls)
@@ -117,30 +120,36 @@ class StatefulFunction(Function):
                  networking: NetworkingManager,
                  timestamp: int,
                  dns: dict[str, dict[str, tuple[str, int]]],
-                 t_id: int):
+                 t_id: int,
+                 request_id: str):
         self.state = operator_state
         self.networking = networking
         self.timestamp = timestamp
         self.dns = dns
         self.t_id = t_id
+        self.request_id = request_id
         self.async_remote_calls = []
 
     async def prepare_message_transmission(self, operator_name: str, key, function_name: str, params):
         if operator_name not in self.dns:
             logging.error(f"Couldn't find operator: {operator_name} in {self.dns}")
 
-        partition: str = str(int(make_key_hashable(key)) % len(self.dns[operator_name].keys()))
+        partition: int = make_key_hashable(key) % len(self.dns[operator_name].keys())
 
         payload = {'__T_ID__': self.t_id,
+                   '__RQ_ID__': self.request_id,
                    '__OP_NAME__': operator_name,
                    '__FUN_NAME__': function_name,
                    '__KEY__': key,
-                   '__PARTITION__': int(partition),
+                   '__PARTITION__': partition,
                    '__TIMESTAMP__': self.timestamp,
                    '__PARAMS__': params}
 
-        operator_host, operator_port = self.dns[operator_name][partition][0], self.dns[operator_name][partition][1]
+        operator_host, operator_port = self.dns[operator_name][str(partition)][0], self.dns[operator_name][str(partition)][1]
         return partition, payload, operator_host, operator_port
+
+    def set_operator_name(self, operator_name: str):
+        self.operator_name = operator_name
 
     @abstractmethod
     async def run(self, *args):

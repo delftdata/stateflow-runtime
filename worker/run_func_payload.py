@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 @dataclass
 class RunFuncPayload:
+    request_id: str
     key: object
     timestamp: int
     operator_name: str

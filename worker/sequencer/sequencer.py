@@ -31,7 +31,7 @@ class Sequencer:
     async def sequence_aborts_for_next_epoch(self, aborted: set):
         async with self.distributed_log_lock:
             aborted_sequence_to_reschedule: set = self.distributed_log.intersection(aborted)
-            self.distributed_log: set = aborted_sequence_to_reschedule
+            self.distributed_log: set = self.distributed_log.union(aborted_sequence_to_reschedule)
 
     async def get_epoch(self) -> set[SequencedItem]:
         async with self.distributed_log_lock:

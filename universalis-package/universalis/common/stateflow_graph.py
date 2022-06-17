@@ -1,10 +1,12 @@
+from universalis.common.local_state_backends import LocalStateBackend
 from universalis.common.operator import BaseOperator
 
 
 class StateflowGraph:
 
-    def __init__(self, name: str):
+    def __init__(self, name: str, operator_state_backend: LocalStateBackend):
         self.name: str = name
+        self.operator_state_backend: LocalStateBackend = operator_state_backend
         self.nodes: dict[str, BaseOperator] = {}
         self.edges: dict[str, list[str]] = {}
 

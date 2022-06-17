@@ -11,14 +11,14 @@ from universalis.common.serialization import Serializer
 
 from coordinator import Coordinator
 
-SERVER_PORT = 8888
+SERVER_PORT = WORKER_PORT = 8888
 
 
 class CoordinatorService:
 
     def __init__(self):
         self.networking = NetworkingManager()
-        self.coordinator = Coordinator()
+        self.coordinator = Coordinator(WORKER_PORT)
         self.scheduler = None
 
     async def schedule_operators(self, message):
