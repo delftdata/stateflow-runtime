@@ -18,6 +18,7 @@ class RoundRobin(BaseScheduler):
         worker_locations = [StateflowWorker(worker[0], worker[1]) for worker in workers.values()]
         worker_assignments: dict[tuple[str, int], list[tuple[BaseOperator, int]]] = {(worker.host, worker.port): []
                                                                                      for worker in worker_locations}
+        operator_functions: dict[str, str] = {}
         for operator_name, operator, connections in iter(execution_graph):
             for partition in range(operator.n_partitions):
                 current_worker = worker_locations.pop(0)
@@ -29,6 +30,8 @@ class RoundRobin(BaseScheduler):
                     operator_partition_locations[operator_name] = {str(partition): (current_worker.host,
                                                                                     current_worker.port)}
                 worker_locations.append(current_worker)
+            operator_functions.update({function.function_definition.__name__: operator_name
+                                       for function in operator.functions.values()})
 
         tasks = [
             asyncio.ensure_future(
@@ -37,7 +40,8 @@ class RoundRobin(BaseScheduler):
                                               "__MSG__": (operator_partitions,
                                                           operator_partition_locations,
                                                           workers,
-                                                          execution_graph.operator_state_backend)}))
+                                                          execution_graph.operator_state_backend,
+                                                          operator_functions)}))
             for worker, operator_partitions in worker_assignments.items()]
 
         await asyncio.gather(*tasks)

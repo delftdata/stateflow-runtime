@@ -3,7 +3,7 @@ import fractions
 import traceback
 import uuid
 from abc import abstractmethod
-from typing import Awaitable
+from typing import Awaitable, Type
 
 from universalis.common.logging import logging
 from universalis.common.networking import NetworkingManager
@@ -38,17 +38,25 @@ def make_key_hashable(key) -> int:
 
 class StatefulFunction(Function):
 
-    state: State
-    networking: NetworkingManager
-    dns: dict[str, dict[str, tuple[str, int]]]
-    timestamp: int  # timestamp
-    t_id: int  # transaction id
-    async_remote_calls: list[tuple[str, str, object, tuple]]
-    request_id: str
-    operator_name: str
-
-    def __init__(self):
+    def __init__(self,
+                 operator_name: str,
+                 operator_state: State,
+                 networking: NetworkingManager,
+                 timestamp: int,
+                 dns: dict[str, dict[str, tuple[str, int]]],
+                 t_id: int,
+                 request_id: str,
+                 operator_functions: dict[str, str]):
         super().__init__()
+        self.operator_name = operator_name
+        self.state: State = operator_state
+        self.networking: NetworkingManager = networking
+        self.timestamp: int = timestamp
+        self.dns: dict[str, dict[str, tuple[str, int]]] = dns
+        self.t_id: int = t_id
+        self.request_id: str = request_id
+        self.async_remote_calls: list[tuple[str, str, object, tuple]] = []
+        self.operator_functions: dict[str, str] = operator_functions
 
     async def __call__(self, *args, **kwargs):
         try:
@@ -86,8 +94,9 @@ class StatefulFunction(Function):
             await asyncio.gather(*remote_calls)
         return n_remote_calls
 
-    def call_remote_async(self, operator_name, function_name, key, params):
-        self.async_remote_calls.append((operator_name, function_name, key, params))
+    def call_remote_async(self, function: Type, key, params):
+        function_name = function.__name__
+        self.async_remote_calls.append((self.operator_functions[function_name], function_name, key, params))
 
     async def call_remote_function_no_response(self, operator_name, function_name, key, params, ack_payload=None):
         partition, payload, operator_host, operator_port = await self.prepare_message_transmission(operator_name,
@@ -115,21 +124,6 @@ class StatefulFunction(Function):
                                                                    Serializer.MSGPACK)
         return resp
 
-    def set_copy(self,
-                 operator_state: State,
-                 networking: NetworkingManager,
-                 timestamp: int,
-                 dns: dict[str, dict[str, tuple[str, int]]],
-                 t_id: int,
-                 request_id: str):
-        self.state = operator_state
-        self.networking = networking
-        self.timestamp = timestamp
-        self.dns = dns
-        self.t_id = t_id
-        self.request_id = request_id
-        self.async_remote_calls = []
-
     async def prepare_message_transmission(self, operator_name: str, key, function_name: str, params):
         if operator_name not in self.dns:
             logging.error(f"Couldn't find operator: {operator_name} in {self.dns}")
@@ -147,9 +141,6 @@ class StatefulFunction(Function):
 
         operator_host, operator_port = self.dns[operator_name][str(partition)][0], self.dns[operator_name][str(partition)][1]
         return partition, payload, operator_host, operator_port
-
-    def set_operator_name(self, operator_name: str):
-        self.operator_name = operator_name
 
     @abstractmethod
     async def run(self, *args):

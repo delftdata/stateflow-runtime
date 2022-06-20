@@ -1,5 +1,3 @@
-import logging
-
 from universalis.common.operator import StatefulFunction
 
 
@@ -24,7 +22,6 @@ class AddCredit(StatefulFunction):
 class SubtractCredit(StatefulFunction):
     async def run(self, key: str, credit: int):
         user_data = await self.get(key)
-        logging.warning(user_data)
         user_data['credit'] -= credit
         if user_data['credit'] < 0:
             raise NotEnoughCredit(f'Not enough credit: {user_data["credit"]} for user: {key}')

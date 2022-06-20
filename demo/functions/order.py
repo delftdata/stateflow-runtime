@@ -1,3 +1,5 @@
+from demo.functions import stock, user
+
 from universalis.common.operator import StatefulFunction
 
 
@@ -21,15 +23,13 @@ class Checkout(StatefulFunction):
         total_cost = 0
         for item in order_data['items']:
             # call stock operator to subtract stock
-            self.call_remote_async(operator_name='stock',
-                                   function_name='SubtractStock',
+            self.call_remote_async(function=stock.SubtractStock,
                                    key=item['item_key'],
                                    params=(item['item_key'], item['quantity']))
 
             total_cost += item['quantity'] * item['cost']
             # call user operator to subtract credit
-        self.call_remote_async(operator_name='user',
-                               function_name='SubtractCredit',
+        self.call_remote_async(function=user.SubtractCredit,
                                key=order_data['user_key'],
                                params=(order_data['user_key'], total_cost))
         return order_data

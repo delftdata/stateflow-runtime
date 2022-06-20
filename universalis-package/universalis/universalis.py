@@ -1,6 +1,7 @@
 import asyncio
 import time
 import uuid
+from typing import Type
 
 import cloudpickle
 from aiokafka import AIOKafkaProducer
@@ -12,7 +13,7 @@ from universalis.common.networking import NetworkingManager
 from universalis.common.stateflow_graph import StateflowGraph
 from universalis.common.stateflow_ingress import IngressTypes
 from universalis.common.stateflow_worker import StateflowWorker
-from universalis.common.operator import BaseOperator, StatefulFunction
+from universalis.common.operator import BaseOperator
 from universalis.common.stateful_function import make_key_hashable
 
 
@@ -52,14 +53,14 @@ class Universalis:
     async def send_tcp_event(self,
                              operator: BaseOperator,
                              key,
-                             function: StatefulFunction,
+                             function: Type,
                              params: tuple,
                              timestamp: int = None):
         if timestamp is None:
             timestamp = time.time_ns()
         event = {'__OP_NAME__': operator.name,
                  '__KEY__': key,
-                 '__FUN_NAME__': function.name,
+                 '__FUN_NAME__': function.__name__,
                  '__PARAMS__': params,
                  '__TIMESTAMP__': timestamp}
         logging.info(event)
@@ -72,20 +73,20 @@ class Universalis:
     async def send_kafka_event(self,
                                operator: BaseOperator,
                                key,
-                               function: StatefulFunction,
+                               function: Type,
                                params: tuple):
         partition: int = make_key_hashable(key) % operator.n_partitions
         event = {'__OP_NAME__': operator.name,
                  '__KEY__': key,
-                 '__FUN_NAME__': function.name,
+                 '__FUN_NAME__': function.__name__,
                  '__PARAMS__': params,
                  '__PARTITION__': partition}
-        request_id = str(uuid.uuid4())
+        request_id = uuid.uuid1().int >> 64
         msg = await self.kafka_producer.send_and_wait(operator.name,
                                                       key=request_id,
                                                       value=event,
                                                       partition=partition)
-        print(f'ID: {request_id} | {msg}')
+        return request_id, msg.timestamp
 
     async def start_kafka_producer(self):
         self.kafka_producer = AIOKafkaProducer(bootstrap_servers=[self.kafka_url],

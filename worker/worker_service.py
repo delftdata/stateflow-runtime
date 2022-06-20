@@ -55,6 +55,7 @@ class Worker:
         self.local_state: InMemoryOperatorState | RedisOperatorState | Stateless = Stateless()
         self.t_counters: dict[int, int] = {}
         self.response_buffer: dict[int, tuple] = {}  # t_id: (request_id, response)
+        self.operator_functions: dict[str, str] = {}  # function_name: operator_name
 
     async def run_function(self, t_id: int, payload: RunFuncPayload, ack_payload=None):
         operator_partition = self.registered_operators[(payload.operator_name, payload.partition)]
@@ -151,7 +152,7 @@ class Worker:
                                 f'{round((epoch_end - epoch_start)*1000, 4)}ms '
                                 f'processed: {len(run_function_tasks)} functions '
                                 f'initiated {len(chain_acks)} chains')
-            elif sequence is None and self.remote_wants_to_commit():
+            elif self.remote_wants_to_commit():
                 epoch_start = timer()
                 await self.send_commit_to_peers(set())
                 # Wait for remote to be ready to commit
@@ -280,10 +281,10 @@ class Worker:
             logging.error(f"Invalid operator state backend type: {self.operator_state_backend}")
             return
         for operator in self.registered_operators.values():
-            operator.attach_state_networking(self.local_state, self.networking, self.dns)
+            operator.attach_state_networking(self.local_state, self.networking, self.dns, self.operator_functions)
 
     async def handle_execution_plan(self, message):
-        worker_operators, self.dns, self.peers, self.operator_state_backend = message
+        worker_operators, self.dns, self.peers, self.operator_state_backend, self.operator_functions = message
         self.sequencer.set_n_workers(len(self.peers))
         del self.peers[self.id]
         operator: Operator
