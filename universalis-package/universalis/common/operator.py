@@ -2,7 +2,6 @@ from typing import Awaitable, Type
 
 from .function_definition import FunctionDefinition
 from .serialization import Serializer
-from .logging import logging
 from .base_operator import BaseOperator
 from .function import Function
 from .stateful_function import StatefulFunction
@@ -28,7 +27,7 @@ class Operator(BaseOperator):
 
     async def run_function(self,
                            t_id: int,
-                           request_id: str,
+                           request_id,
                            timestamp: int,
                            function_name: str,
                            ack_payload: tuple[str, int, str],
@@ -40,7 +39,6 @@ class Operator(BaseOperator):
                                                                       t_id,
                                                                       request_id,
                                                                       self.operator_functions)
-        logging.info(f'PROCESSING FUNCTION -> {function_name}:{t_id} of operator: {self.name} with params: {params}')
         if ack_payload is not None:
             # part of a chain (not root)
             ack_host, ack_id, fraction_str = ack_payload

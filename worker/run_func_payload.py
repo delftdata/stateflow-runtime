@@ -20,3 +20,6 @@ class SequencedItem:
 
     def __hash__(self):
         return hash(self.t_id)
+
+    def __lt__(self, other):
+        return self.t_id < other.t_id

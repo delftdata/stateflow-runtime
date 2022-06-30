@@ -3,20 +3,18 @@ import time
 import pandas as pd
 
 import uvloop
-from universalis.common.local_state_backends import LocalStateBackend
-from universalis.common.operator import Operator
-from universalis.common.stateflow_graph import StateflowGraph
 from universalis.common.stateflow_ingress import IngressTypes
 from universalis.universalis import Universalis
 
-from demo.functions import order, stock, user
+from demo.functions import order, stock, user, graph
+from demo.functions.graph import user_operator, stock_operator, order_operator
 
-N_USERS = 1000
+N_USERS = 5000
 USER_STARTING_CREDIT = 1000
-N_ITEMS = 1000
+N_ITEMS = 5000
 ITEM_DEFAULT_PRICE = 1
 ITEM_STARTING_STOCK = 1000
-N_ORDERS = 1000
+N_ORDERS = 5000
 
 UNIVERSALIS_HOST: str = 'localhost'
 UNIVERSALIS_PORT: int = 8886
@@ -27,86 +25,76 @@ async def main():
     universalis = Universalis(UNIVERSALIS_HOST, UNIVERSALIS_PORT,
                               ingress_type=IngressTypes.KAFKA,
                               kafka_url=KAFKA_URL)
-
-    user_operator = Operator('user', n_partitions=6)
-    stock_operator = Operator('stock', n_partitions=6)
-    order_operator = Operator('order', n_partitions=6)
-
-    ####################################################################################################################
-    # DECLARE A STATEFLOW GRAPH ########################################################################################
-    ####################################################################################################################
-    g = StateflowGraph('shopping-cart', operator_state_backend=LocalStateBackend.REDIS)
-    ####################################################################################################################
-    user_operator.register_stateful_functions(user.CreateUser, user.AddCredit, user.SubtractCredit)
-    g.add_operator(user_operator)
-    ####################################################################################################################
-    stock_operator.register_stateful_functions(stock.CreateItem, stock.AddStock, stock.SubtractStock)
-    g.add_operator(stock_operator)
-    ####################################################################################################################
-    order_operator.register_stateful_functions(order.CreateOrder, order.AddItem, order.Checkout)
-    g.add_operator(order_operator)
-    ####################################################################################################################
-    g.add_connection(order_operator, user_operator, bidirectional=True)
-    g.add_connection(order_operator, stock_operator, bidirectional=True)
     ####################################################################################################################
     # SUBMIT STATEFLOW GRAPH ###########################################################################################
     ####################################################################################################################
-    await universalis.submit(g, user, order, stock)
+    await universalis.submit(graph.g)
 
     print('Graph submitted')
 
     timestamped_request_ids = {}
 
-    time.sleep(2)
+    time.sleep(1)
 
     # CREATE USERS
-
+    tasks = []
     for i in range(N_USERS):
-        request_id, timestamp = await universalis.send_kafka_event(operator=user_operator,
-                                                                   key=i,
-                                                                   function=user.CreateUser,
-                                                                   params=(i, str(i)))
+        tasks.append(universalis.send_kafka_event(operator=user_operator,
+                                                  key=i,
+                                                  function=user.CreateUser,
+                                                  params=(i, str(i))))
+    responses = await asyncio.gather(*tasks)
+    for request_id, timestamp in responses:
         timestamped_request_ids[request_id] = timestamp
 
-    time.sleep(2)
-
+    tasks = []
     for i in range(N_USERS):
-        request_id, timestamp = await universalis.send_kafka_event(user_operator, i, user.AddCredit, (i, USER_STARTING_CREDIT))
+        tasks.append(universalis.send_kafka_event(user_operator, i, user.AddCredit, (i, USER_STARTING_CREDIT)))
+    responses = await asyncio.gather(*tasks)
+    for request_id, timestamp in responses:
         timestamped_request_ids[request_id] = timestamp
-    time.sleep(2)
 
+    print('Users done')
     # CREATE ITEMS
-
+    tasks = []
     for i in range(N_ITEMS):
-        request_id, timestamp = await universalis.send_kafka_event(stock_operator, i, stock.CreateItem, (i, str(i), ITEM_DEFAULT_PRICE))
+        tasks.append(universalis.send_kafka_event(stock_operator, i, stock.CreateItem, (i, str(i), ITEM_DEFAULT_PRICE)))
+    responses = await asyncio.gather(*tasks)
+    for request_id, timestamp in responses:
         timestamped_request_ids[request_id] = timestamp
-    time.sleep(2)
 
+    tasks = []
     for i in range(N_ITEMS):
-        request_id, timestamp = await universalis.send_kafka_event(stock_operator, i, stock.AddStock, (i, ITEM_STARTING_STOCK))
+        tasks.append(universalis.send_kafka_event(stock_operator, i, stock.AddStock, (i, ITEM_STARTING_STOCK)))
+    responses = await asyncio.gather(*tasks)
+    for request_id, timestamp in responses:
         timestamped_request_ids[request_id] = timestamp
-    time.sleep(2)
-
+    print('Items done')
     # CREATE ORDERS
-
+    tasks = []
     for i in range(N_ORDERS):
-        request_id, timestamp = await universalis.send_kafka_event(order_operator, i, order.CreateOrder, (i, i))
+        tasks.append(universalis.send_kafka_event(order_operator, i, order.CreateOrder, (i, i)))
+    responses = await asyncio.gather(*tasks)
+    for request_id, timestamp in responses:
         timestamped_request_ids[request_id] = timestamp
-    time.sleep(2)
 
+    tasks = []
     for i in range(N_ORDERS):
         order_key = item_key = i
         quantity, cost = 1, 1
-        request_id, timestamp = await universalis.send_kafka_event(order_operator, order_key, order.AddItem, (order_key, item_key,
-                                                                                      quantity, cost))
+        tasks.append(universalis.send_kafka_event(order_operator, order_key, order.AddItem, (order_key, item_key,
+                                                                                             quantity, cost)))
+    responses = await asyncio.gather(*tasks)
+    for request_id, timestamp in responses:
         timestamped_request_ids[request_id] = timestamp
-    time.sleep(2)
 
+    tasks = []
     for i in range(N_ORDERS):
         order_key = i
-        request_id, timestamp = await universalis.send_kafka_event(order_operator, order_key, order.Checkout, (order_key,))
+        tasks.append(universalis.send_kafka_event(order_operator, order_key, order.Checkout, (order_key,)))
+    responses = await asyncio.gather(*tasks)
+    for request_id, timestamp in responses:
         timestamped_request_ids[request_id] = timestamp
-    time.sleep(2)
     await universalis.close()
 
     pd.DataFrame(timestamped_request_ids.items(), columns=['request_id', 'timestamp']).to_csv('client_requests.csv',

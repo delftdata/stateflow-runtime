@@ -1,5 +1,6 @@
 import asyncio
 import time
+import types
 import uuid
 from typing import Type
 
@@ -41,12 +42,24 @@ class Universalis:
             asyncio.get_event_loop().create_task(self.start_kafka_producer())
             logging.info(f'KAFKA INITIALIZED')
 
-    async def submit(self, stateflow_graph: StateflowGraph, *modules):
+    @staticmethod
+    def get_modules(stateflow_graph: StateflowGraph):
+        modules = {types.ModuleType(stateflow_graph.__module__)}
+        for operator in stateflow_graph.nodes.values():
+            modules.add(types.ModuleType(operator.__module__))
+            for function in operator.functions.values():
+                modules.add(types.ModuleType(function.function_definition.__module__))
+        return modules
+
+    async def submit(self, stateflow_graph: StateflowGraph):
         logging.info(f'Submitting Stateflow graph: {stateflow_graph.name}')
         if not isinstance(stateflow_graph, StateflowGraph):
             raise NotAStateflowGraph
+        modules = self.get_modules(stateflow_graph)
+        system_module_name = __name__.split('.')[0]
         for module in modules:
-            cloudpickle.register_pickle_by_value(module)
+            if not module.__name__.startswith(system_module_name):  # exclude system modules
+                cloudpickle.register_pickle_by_value(module)
         await self.send_execution_graph(stateflow_graph)
         logging.info(f'Submission of Stateflow graph: {stateflow_graph.name} completed')
 

@@ -1,6 +1,5 @@
 import asyncio
 
-from universalis.common.logging import logging
 from universalis.common.operator import BaseOperator
 from universalis.common.stateflow_graph import StateflowGraph
 from universalis.common.stateflow_worker import StateflowWorker
@@ -19,7 +18,7 @@ class RoundRobin(BaseScheduler):
         worker_assignments: dict[tuple[str, int], list[tuple[BaseOperator, int]]] = {(worker.host, worker.port): []
                                                                                      for worker in worker_locations}
         operator_functions: dict[str, str] = {}
-        for operator_name, operator, connections in iter(execution_graph):
+        for operator_name, operator in iter(execution_graph):
             for partition in range(operator.n_partitions):
                 current_worker = worker_locations.pop(0)
                 worker_assignments[(current_worker.host, current_worker.port)].append((operator, partition))

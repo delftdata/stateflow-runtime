@@ -31,6 +31,7 @@ KAFKA_URL: str = os.getenv('KAFKA_URL', None)
 INGRESS_TYPE = os.getenv('INGRESS_TYPE', None)
 EGRESS_TOPIC_NAME: str = 'universalis-egress'
 EPOCH_INTERVAL = 0.01  # 10ms
+SEQUENCE_MAX_SIZE = 100
 
 
 class Worker:
@@ -38,7 +39,7 @@ class Worker:
     def __init__(self):
         self.id: int = -1
         self.networking = NetworkingManager()
-        self.sequencer = Sequencer()
+        self.sequencer = Sequencer(SEQUENCE_MAX_SIZE)
         self.scheduler = None
         self.router = None
         self.kafka_egress_producer = None
@@ -65,11 +66,10 @@ class Worker:
                                                          payload.function_name,
                                                          ack_payload,
                                                          *payload.params)
-
-        if payload.response_socket:
+        if payload.response_socket is not None:
             self.router.write((payload.response_socket, self.networking.encode_message(response,
                                                                                        Serializer.MSGPACK)))
-        elif not payload.response_socket and response:
+        elif response is not None:
             if isinstance(response, Exception):
                 self.logic_aborts.add(t_id)
                 response = str(response)
@@ -85,10 +85,10 @@ class Worker:
                                                                                  self.sequencer.t_counter)},
                                                                     Serializer.MSGPACK))
 
-    async def send_responses(self, committed_t_ids: set):
+    async def send_responses(self, concurrency_aborts_everywhere: set, logic_aborts_everywhere: set):
         for t_id, response in self.response_buffer.items():
-            logging.info(f'Committed: {committed_t_ids} logic aborts: {self.logic_aborts}')
-            if t_id in committed_t_ids or t_id in self.logic_aborts:
+            if t_id not in concurrency_aborts_everywhere or t_id in logic_aborts_everywhere:
+                # if not aborted due to concurrency or aborted based on logic
                 await self.scheduler.spawn(
                     self.kafka_egress_producer.send_and_wait(EGRESS_TOPIC_NAME,
                                                              key=response[0],
@@ -97,7 +97,7 @@ class Worker:
     async def function_scheduler(self):
         while True:
             await asyncio.sleep(EPOCH_INTERVAL)  # EPOCH TIMER
-            sequence: set[SequencedItem] = await self.sequencer.get_epoch()  # GET SEQUENCE
+            sequence: list[SequencedItem] = await self.sequencer.get_epoch()  # GET SEQUENCE
             if sequence is not None:
                 # Run all the epochs functions concurrently
                 epoch_start = timer()
@@ -108,18 +108,18 @@ class Worker:
                 await asyncio.gather(*run_function_tasks)
                 # Wait for chains to finish
                 end_proc_time = timer()
-                logging.warning(f'Functions finished in: {round((end_proc_time - epoch_start)*1000, 4)}ms')
+                logging.info(f'Functions finished in: {round((end_proc_time - epoch_start)*1000, 4)}ms')
                 logging.info(f'Waiting on chained functions...')
                 chain_acks = [ack.wait()
                               for ack in self.networking.waited_ack_events.values()]
                 await asyncio.gather(*chain_acks)
                 chain_done_time = timer()
-                logging.warning(f'Chain proc finished in: {round((chain_done_time - end_proc_time) * 1000, 4)}ms')
+                logging.info(f'Chain proc finished in: {round((chain_done_time - end_proc_time) * 1000, 4)}ms')
                 # Check for local state conflicts
                 logging.info(f'Checking conflicts...')
                 aborted: set[int] = self.local_state.check_conflicts()
                 checking_conflicts_time = timer()
-                logging.warning(f'Checking conflicts in: {round((checking_conflicts_time - chain_done_time) * 1000, 4)}ms')
+                logging.info(f'Checking conflicts in: {round((checking_conflicts_time - chain_done_time) * 1000, 4)}ms')
                 # Notify peers that we are ready to commit
                 logging.info(f'Notify peers...')
                 commit_start = timer()
@@ -136,18 +136,18 @@ class Worker:
                 logic_aborts_everywhere: set[int] = set(
                     itertools.chain.from_iterable(self.logic_aborts_from_remote.values())
                 )
-                logic_aborts_everywhere.union(self.logic_aborts)
+                logic_aborts_everywhere = logic_aborts_everywhere.union(self.logic_aborts)
                 # Commit the local while taking into account the aborts from remote
                 logging.info(f'Sequence committed!')
-                committed_t_ids = await self.local_state.commit(remote_aborted.union(logic_aborts_everywhere))
-                await self.send_responses(committed_t_ids)
+                await self.local_state.commit(remote_aborted.union(logic_aborts_everywhere))
+                aborts_for_next_epoch: set[int] = aborted.union(remote_aborted)
+                await self.send_responses(aborts_for_next_epoch, logic_aborts_everywhere)
                 # Cleanup
-                await self.sequencer.increment_epoch(self.t_counters.values())
-                self.cleanup_after_epoch()
+                await self.sequencer.increment_epoch(self.t_counters.values(), aborts_for_next_epoch)
                 # Re-sequence the aborted transactions due to concurrency
-                await self.sequencer.sequence_aborts_for_next_epoch(aborted.union(remote_aborted))
+                self.cleanup_after_epoch()
                 epoch_end = timer()
-                logging.warning(f'Commit took: {round((epoch_end - commit_start) * 1000, 4)}ms')
+                logging.info(f'Commit took: {round((epoch_end - commit_start) * 1000, 4)}ms')
                 logging.warning(f'Epoch: {self.sequencer.epoch_counter - 1} done in '
                                 f'{round((epoch_end - epoch_start)*1000, 4)}ms '
                                 f'processed: {len(run_function_tasks)} functions '
