@@ -97,8 +97,10 @@ async def main():
         timestamped_request_ids[request_id] = timestamp
     await universalis.close()
 
-    pd.DataFrame(timestamped_request_ids.items(), columns=['request_id', 'timestamp']).to_csv('client_requests.csv',
-                                                                                              index=False)
+    pd.DataFrame(timestamped_request_ids.items(), columns=['request_id', 'timestamp']).to_csv(
+        'rhea-50ms-req.csv',
+        index=False)
 
-uvloop.install()
-asyncio.run(main())
+if __name__ == "__main__":
+    uvloop.install()
+    asyncio.run(main())

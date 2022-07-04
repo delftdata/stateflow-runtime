@@ -12,7 +12,7 @@ from graph import ycsb_operator, g
 from zipfian_generator import ZipfGenerator
 
 
-N_ROWS = 1000
+N_ROWS = 10000
 
 UNIVERSALIS_HOST: str = 'localhost'
 UNIVERSALIS_PORT: int = 8886
@@ -40,6 +40,7 @@ async def main():
     zipf_gen = ZipfGenerator(items=N_ROWS)
     operations = ["r", "u"]
 
+    print('Inserting')
     # INSERT
     tasks = []
     for i in keys:
@@ -48,12 +49,16 @@ async def main():
                                                   function=ycsb.Insert,
                                                   params=(i, str(i))))
     responses = await asyncio.gather(*tasks)
-    for request_id, timestamp in responses:
-        timestamped_request_ids[request_id] = timestamp
 
+    # for request_id, timestamp in responses:
+    #     timestamped_request_ids[request_id] = timestamp
+
+    print('All inserted')
     time.sleep(1)
 
+    print('Running Read/Updates')
     tasks = []
+
     for i in range(N_ROWS):
         key = keys[next(zipf_gen)]
         op = random.choice(operations)
@@ -61,15 +66,19 @@ async def main():
             tasks.append(universalis.send_kafka_event(ycsb_operator, key, ycsb.Read, (key, )))
         else:
             tasks.append(universalis.send_kafka_event(ycsb_operator, key, ycsb.Update, (key, str(key))))
+
     responses = await asyncio.gather(*tasks)
     for request_id, timestamp in responses:
         timestamped_request_ids[request_id] = timestamp
 
+    print('Read/Writes complete')
+
     await universalis.close()
 
     pd.DataFrame(timestamped_request_ids.items(), columns=['request_id', 'timestamp']).to_csv(
-        '../demo/client_requests.csv',
+        '../demo/rhea-50ms-req.csv',
         index=False)
 
-uvloop.install()
-asyncio.run(main())
+if __name__ == "__main__":
+    uvloop.install()
+    asyncio.run(main())

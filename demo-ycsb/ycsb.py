@@ -4,7 +4,7 @@ from universalis.common.stateful_function import StatefulFunction
 class Insert(StatefulFunction):
     async def run(self, key: str, value: str):
         await self.put(key, value)
-        return key
+        # return key
 
 
 class Read(StatefulFunction):

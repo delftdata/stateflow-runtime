@@ -30,7 +30,7 @@ DISCOVERY_PORT = int(os.environ['DISCOVERY_PORT'])
 KAFKA_URL: str = os.getenv('KAFKA_URL', None)
 INGRESS_TYPE = os.getenv('INGRESS_TYPE', None)
 EGRESS_TOPIC_NAME: str = 'universalis-egress'
-EPOCH_INTERVAL = 0.01  # 10ms
+EPOCH_INTERVAL = 0.05  # 10ms
 SEQUENCE_MAX_SIZE = 100
 
 
