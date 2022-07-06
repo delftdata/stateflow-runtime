@@ -1,6 +1,6 @@
-from demo.functions import stock, user
-
 from universalis.common.operator import StatefulFunction
+
+from demo.shopping_cart.functions import stock, user
 
 
 class CreateOrder(StatefulFunction):

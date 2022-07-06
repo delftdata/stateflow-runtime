@@ -7,8 +7,8 @@ import seaborn as sns
 
 
 def main():
-    input_msgs = pd.read_csv('rhea-50ms-req.csv')
-    output_msgs = pd.read_csv('output.csv')
+    input_msgs = pd.read_csv('requests.csv')
+    output_msgs = pd.read_csv('responses.csv')
 
     joined = pd.merge(input_msgs, output_msgs, on='request_id', how='outer')
     runtime = joined['timestamp_y'] - joined['timestamp_x']
@@ -56,6 +56,7 @@ def main():
     plt.xlabel("Time (Seconds)")
     plt.ylabel("Throughput (Tx/s)")
     plt.savefig('throughput_graph.png')
+
 
 if __name__ == "__main__":
     main()

@@ -8,7 +8,7 @@ from universalis.common.operator import Operator
 from universalis.common.stateflow_graph import StateflowGraph
 from universalis.common.stateflow_ingress import IngressTypes
 
-from demo.functions import order, stock, user
+from functions import order, stock, user
 from universalis.universalis import Universalis
 from universalis.common.local_state_backends import LocalStateBackend
 
@@ -35,7 +35,7 @@ async def submit_dataflow_graph(_):
     ####################################################################################################################
     # DECLARE A STATEFLOW GRAPH ########################################################################################
     ####################################################################################################################
-    g = StateflowGraph('shopping-cart', operator_state_backend=LocalStateBackend.REDIS)
+    g = StateflowGraph('shopping_cart', operator_state_backend=LocalStateBackend.REDIS)
     ####################################################################################################################
     app.ctx.user_operator.register_stateful_functions(user.CreateUser, user.AddCredit, user.SubtractCredit)
     g.add_operator(app.ctx.user_operator)

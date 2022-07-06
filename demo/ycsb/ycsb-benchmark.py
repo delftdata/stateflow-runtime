@@ -7,17 +7,20 @@ import uvloop
 from universalis.common.stateflow_ingress import IngressTypes
 from universalis.universalis import Universalis
 
-import ycsb
+from demo.ycsb.functions import ycsb
 from graph import ycsb_operator, g
 from zipfian_generator import ZipfGenerator
 
 
 N_ROWS = 10000
 
+keys: list[int] = list(range(N_ROWS))
+operations = ['read', 'update', 'transfer']
+operation_mix = [0.5, 0.3, 0.2]
+
 UNIVERSALIS_HOST: str = 'localhost'
 UNIVERSALIS_PORT: int = 8886
 KAFKA_URL = 'localhost:9093'
-
 
 keys: list[int] = list(range(N_ROWS))
 
@@ -30,15 +33,11 @@ async def main():
     # SUBMIT STATEFLOW GRAPH ###########################################################################################
     ####################################################################################################################
     await universalis.submit(g)
-
     print('Graph submitted')
 
-    timestamped_request_ids = {}
-
-    time.sleep(1)
-
     zipf_gen = ZipfGenerator(items=N_ROWS)
-    operations = ["r", "u"]
+    timestamped_request_ids = {}
+    time.sleep(1)
 
     print('Inserting')
     # INSERT
@@ -48,35 +47,42 @@ async def main():
                                                   key=i,
                                                   function=ycsb.Insert,
                                                   params=(i, str(i))))
-    responses = await asyncio.gather(*tasks)
+    await asyncio.gather(*tasks)
 
-    # for request_id, timestamp in responses:
-    #     timestamped_request_ids[request_id] = timestamp
+    print(f'All {N_ROWS} Records Inserted')
+    time.sleep(0.5)
 
-    print('All inserted')
-    time.sleep(1)
-
-    print('Running Read/Updates')
+    print('Running Transaction Mix')
     tasks = []
 
     for i in range(N_ROWS):
         key = keys[next(zipf_gen)]
         op = random.choice(operations)
-        if op == "r":
-            tasks.append(universalis.send_kafka_event(ycsb_operator, key, ycsb.Read, (key, )))
+
+        if op == 'read':
+            tasks.append(universalis.send_kafka_event(ycsb_operator, key, ycsb.Read, (str(key))))
+        elif op == 'update':
+            tasks.append(universalis.send_kafka_event(ycsb_operator, key, ycsb.Update, (str(key))))
         else:
-            tasks.append(universalis.send_kafka_event(ycsb_operator, key, ycsb.Update, (key, str(key))))
+            key_b = keys[next(zipf_gen)]
+
+            while key_b == key:
+                key_b = keys[next(zipf_gen)]
+
+            tasks.append(universalis.send_kafka_event(ycsb_operator, key, ycsb.Transfer, (str(key), str(key_b))))
 
     responses = await asyncio.gather(*tasks)
+
     for request_id, timestamp in responses:
         timestamped_request_ids[request_id] = timestamp
 
-    print('Read/Writes complete')
+    print('Transaction Mix Complete')
+    time.sleep(0.5)
 
     await universalis.close()
 
     pd.DataFrame(timestamped_request_ids.items(), columns=['request_id', 'timestamp']).to_csv(
-        '../demo/rhea-50ms-req.csv',
+        '../shopping_cart/rhea-req.csv',
         index=False)
 
 if __name__ == "__main__":
