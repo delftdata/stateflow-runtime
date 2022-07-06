@@ -43,7 +43,7 @@ async def consume():
         joined = pd.merge(requests, responses, on='request_id', how='outer')
         joined['runtime'] = joined['timestamp_y'] - joined['timestamp_x']
 
-        joined.to_csv('demo/result.csv', index=False)
+        joined.to_csv('demo/results.csv', index=False)
 
 if __name__ == "__main__":
     uvloop.install()

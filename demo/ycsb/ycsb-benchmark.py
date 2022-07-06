@@ -50,7 +50,7 @@ async def main():
     await asyncio.gather(*tasks)
 
     print(f'All {N_ROWS} Records Inserted')
-    time.sleep(10)
+    time.sleep(5)
 
     print('Running Transaction Mix')
     tasks = []
@@ -77,7 +77,7 @@ async def main():
         timestamped_request_ids[request_id] = timestamp
 
     print('Transaction Mix Complete')
-    time.sleep(10)
+    time.sleep(1)
 
     await universalis.close()
 
