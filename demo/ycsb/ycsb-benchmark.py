@@ -7,7 +7,7 @@ import uvloop
 from universalis.common.stateflow_ingress import IngressTypes
 from universalis.universalis import Universalis
 
-from demo.ycsb.functions import ycsb
+from functions import ycsb
 from graph import ycsb_operator, g
 from zipfian_generator import ZipfGenerator
 
@@ -46,7 +46,7 @@ async def main():
         tasks.append(universalis.send_kafka_event(operator=ycsb_operator,
                                                   key=i,
                                                   function=ycsb.Insert,
-                                                  params=(i, str(i))))
+                                                  params=(str(i),)))
     await asyncio.gather(*tasks)
 
     print(f'All {N_ROWS} Records Inserted')
@@ -60,16 +60,16 @@ async def main():
         op = random.choice(operations)
 
         if op == 'read':
-            tasks.append(universalis.send_kafka_event(ycsb_operator, key, ycsb.Read, (str(key))))
+            tasks.append(universalis.send_kafka_event(ycsb_operator, key, ycsb.Read, (str(key),)))
         elif op == 'update':
-            tasks.append(universalis.send_kafka_event(ycsb_operator, key, ycsb.Update, (str(key))))
+            tasks.append(universalis.send_kafka_event(ycsb_operator, key, ycsb.Update, (str(key),)))
         else:
             key_b = keys[next(zipf_gen)]
 
             while key_b == key:
                 key_b = keys[next(zipf_gen)]
 
-            tasks.append(universalis.send_kafka_event(ycsb_operator, key, ycsb.Transfer, (str(key), str(key_b))))
+            tasks.append(universalis.send_kafka_event(ycsb_operator, key, ycsb.Transfer, (str(key), str(key_b),)))
 
     responses = await asyncio.gather(*tasks)
 
@@ -82,7 +82,7 @@ async def main():
     await universalis.close()
 
     pd.DataFrame(timestamped_request_ids.items(), columns=['request_id', 'timestamp']).to_csv(
-        '../shopping_cart/rhea-req.csv',
+        '../requests.csv',
         index=False)
 
 if __name__ == "__main__":
