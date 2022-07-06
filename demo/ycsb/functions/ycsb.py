@@ -1,9 +1,14 @@
 from universalis.common.stateful_function import StatefulFunction
 
 
+class NotEnoughCredit(Exception):
+    pass
+
+
 class Insert(StatefulFunction):
     async def run(self, key: str):
         await self.put(key, 1)
+        return key
 
 
 class Read(StatefulFunction):
@@ -32,6 +37,10 @@ class Transfer(StatefulFunction):
         )
 
         value_a -= 1
+
+        if value_a < 0:
+            raise NotEnoughCredit(f'Not enough credit for user: {key_a}')
+
         await self.put(key_a, value_a)
 
         return key_a

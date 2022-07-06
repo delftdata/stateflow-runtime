@@ -73,7 +73,6 @@ class Worker:
             if isinstance(response, Exception):
                 self.logic_aborts.add(t_id)
                 response = str(response)
-                logging.error(f'Application logic error: {response}')
             self.response_buffer[t_id] = (payload.request_id, response)
 
     async def send_commit_to_peers(self, aborted: set[int]):
@@ -148,10 +147,10 @@ class Worker:
                 self.cleanup_after_epoch()
                 epoch_end = timer()
                 logging.info(f'Commit took: {round((epoch_end - commit_start) * 1000, 4)}ms')
-                logging.warning(f'Epoch: {self.sequencer.epoch_counter - 1} done in '
-                                f'{round((epoch_end - epoch_start)*1000, 4)}ms '
-                                f'processed: {len(run_function_tasks)} functions '
-                                f'initiated {len(chain_acks)} chains')
+                logging.info(f'Epoch: {self.sequencer.epoch_counter - 1} done in '
+                             f'{round((epoch_end - epoch_start)*1000, 4)}ms '
+                             f'processed: {len(run_function_tasks)} functions '
+                             f'initiated {len(chain_acks)} chains')
             elif self.remote_wants_to_commit():
                 epoch_start = timer()
                 await self.send_commit_to_peers(set())
@@ -163,9 +162,9 @@ class Worker:
                 await self.sequencer.increment_epoch(self.t_counters.values())
                 self.cleanup_after_epoch()
                 epoch_end = timer()
-                logging.warning(f'Epoch: {self.sequencer.epoch_counter - 1} done in '
-                                f'{round((epoch_end - epoch_start)*1000, 4)}ms '
-                                f'processed 0 functions directly')
+                logging.info(f'Epoch: {self.sequencer.epoch_counter - 1} done in '
+                             f'{round((epoch_end - epoch_start)*1000, 4)}ms '
+                             f'processed 0 functions directly')
 
     def cleanup_after_epoch(self):
         for event in self.ready_to_commit_events.values():

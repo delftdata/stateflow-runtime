@@ -15,14 +15,12 @@ from zipfian_generator import ZipfGenerator
 N_ROWS = 10000
 
 keys: list[int] = list(range(N_ROWS))
-operations = ['read', 'update']
-operation_mix = [0.5, 0.5]
+operations = ["r", "u", "t"]
+operation_mix = [0.5, 0.3, 0.2]
 
 UNIVERSALIS_HOST: str = 'localhost'
 UNIVERSALIS_PORT: int = 8886
 KAFKA_URL = 'localhost:9093'
-
-keys: list[int] = list(range(N_ROWS))
 
 
 async def main():
@@ -36,6 +34,7 @@ async def main():
     print('Graph submitted')
 
     zipf_gen = ZipfGenerator(items=N_ROWS)
+    operation_counts: dict[str, int] = {"r": 0, "u": 0, "t": 0}
     timestamped_request_ids = {}
     time.sleep(1)
 
@@ -46,7 +45,7 @@ async def main():
         tasks.append(universalis.send_kafka_event(operator=ycsb_operator,
                                                   key=i,
                                                   function=ycsb.Insert,
-                                                  params=(str(i),)))
+                                                  params=(i,)))
     await asyncio.gather(*tasks)
 
     print(f'All {N_ROWS} Records Inserted')
@@ -57,24 +56,22 @@ async def main():
 
     for i in range(N_ROWS):
         key = keys[next(zipf_gen)]
-        op = random.choice(operations)
-
-        if op == 'read':
-            tasks.append(universalis.send_kafka_event(ycsb_operator, key, ycsb.Read, (str(key),)))
-        elif op == 'update':
-            tasks.append(universalis.send_kafka_event(ycsb_operator, key, ycsb.Update, (str(key),)))
-        elif op == 'transfer':
-            key_b = keys[next(zipf_gen)]
-
-            while key_b == key:
-                key_b = keys[next(zipf_gen)]
-
-            tasks.append(universalis.send_kafka_event(ycsb_operator, key, ycsb.Transfer, (str(key), str(key_b))))
-
+        op = random.choices(operations, weights=operation_mix, k=1)[0]
+        operation_counts[op] += 1
+        if op == "r":
+            tasks.append(universalis.send_kafka_event(ycsb_operator, key, ycsb.Read, (key,)))
+        elif op == "u":
+            tasks.append(universalis.send_kafka_event(ycsb_operator, key, ycsb.Update, (key,)))
+        else:
+            key2 = keys[next(zipf_gen)]
+            while key2 == key:
+                key2 = keys[next(zipf_gen)]
+            tasks.append(universalis.send_kafka_event(ycsb_operator, key, ycsb.Transfer, (key, key2)))
     responses = await asyncio.gather(*tasks)
-
     for request_id, timestamp in responses:
         timestamped_request_ids[request_id] = timestamp
+
+    print(operation_counts)
 
     print('Transaction Mix Complete')
     time.sleep(1)

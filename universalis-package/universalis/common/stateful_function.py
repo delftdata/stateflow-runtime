@@ -73,7 +73,7 @@ class StatefulFunction(Function):
                 # No chain or end
                 return res, 0
         except Exception as e:
-            logging.error(traceback.format_exc())
+            logging.debug(traceback.format_exc())
             return e
 
     async def get(self, key):
