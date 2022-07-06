@@ -24,12 +24,14 @@ class Update(StatefulFunction):
 class Transfer(StatefulFunction):
     async def run(self, key_a: str, key_b: str):
         value_a = await self.get(key_a)
-        value_b = await self.get(key_b)
+
+        self.call_remote_async(
+            function=Update,
+            key=key_b,
+            params=(key_b,)
+        )
 
         value_a -= 1
-        value_b += 1
-
         await self.put(key_a, value_a)
-        await self.put(key_b, value_b)
 
-        return key_a, key_b
+        return key_a

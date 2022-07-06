@@ -15,8 +15,8 @@ from zipfian_generator import ZipfGenerator
 N_ROWS = 10000
 
 keys: list[int] = list(range(N_ROWS))
-operations = ['read', 'update', 'transfer']
-operation_mix = [0.5, 0.3, 0.2]
+operations = ['read', 'update']
+operation_mix = [0.5, 0.5]
 
 UNIVERSALIS_HOST: str = 'localhost'
 UNIVERSALIS_PORT: int = 8886
@@ -50,7 +50,7 @@ async def main():
     await asyncio.gather(*tasks)
 
     print(f'All {N_ROWS} Records Inserted')
-    time.sleep(0.5)
+    time.sleep(10)
 
     print('Running Transaction Mix')
     tasks = []
@@ -63,13 +63,13 @@ async def main():
             tasks.append(universalis.send_kafka_event(ycsb_operator, key, ycsb.Read, (str(key),)))
         elif op == 'update':
             tasks.append(universalis.send_kafka_event(ycsb_operator, key, ycsb.Update, (str(key),)))
-        else:
+        elif op == 'transfer':
             key_b = keys[next(zipf_gen)]
 
             while key_b == key:
                 key_b = keys[next(zipf_gen)]
 
-            tasks.append(universalis.send_kafka_event(ycsb_operator, key, ycsb.Transfer, (str(key), str(key_b),)))
+            tasks.append(universalis.send_kafka_event(ycsb_operator, key, ycsb.Transfer, (str(key), str(key_b))))
 
     responses = await asyncio.gather(*tasks)
 
@@ -77,13 +77,12 @@ async def main():
         timestamped_request_ids[request_id] = timestamp
 
     print('Transaction Mix Complete')
-    time.sleep(0.5)
+    time.sleep(10)
 
     await universalis.close()
 
-    pd.DataFrame(timestamped_request_ids.items(), columns=['request_id', 'timestamp']).to_csv(
-        '../requests.csv',
-        index=False)
+    pd.DataFrame(timestamped_request_ids.items(), columns=['request_id', 'timestamp'])\
+        .to_csv('demo/requests.csv', index=False)
 
 if __name__ == "__main__":
     uvloop.install()

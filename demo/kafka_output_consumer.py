@@ -1,5 +1,6 @@
 import asyncio
 
+import os
 import pandas as pd
 import uvloop
 from aiokafka import AIOKafkaConsumer
@@ -35,13 +36,14 @@ async def consume():
         print("Writing...")
         await consumer.stop()
 
-        requests = pd.read_csv('requests.csv')
+        requests = pd.read_csv('demo/requests.csv')
+        os.remove('demo/requests.csv')
         responses = pd.DataFrame.from_records(records, columns=['request_id', 'response', 'timestamp'])
 
         joined = pd.merge(requests, responses, on='request_id', how='outer')
-        joined['runtime'] = (joined['timestamp_y'] - joined['timestamp_x']).dropna()
+        joined['runtime'] = joined['timestamp_y'] - joined['timestamp_x']
 
-        joined.to_csv('responses.csv', index=False)
+        joined.to_csv('demo/result.csv', index=False)
 
 if __name__ == "__main__":
     uvloop.install()
