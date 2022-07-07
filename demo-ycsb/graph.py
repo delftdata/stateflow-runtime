@@ -10,5 +10,5 @@ import ycsb
 g = StateflowGraph('ycsb-experiment', operator_state_backend=LocalStateBackend.REDIS)
 ycsb_operator = Operator('ycsb', n_partitions=6)
 ####################################################################################################################
-ycsb_operator.register_stateful_functions(ycsb.Insert, ycsb.Read, ycsb.Update)
+ycsb_operator.register_stateful_functions(ycsb.Insert, ycsb.Read, ycsb.Update, ycsb.Transfer)
 g.add_operator(ycsb_operator)

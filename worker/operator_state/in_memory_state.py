@@ -25,6 +25,7 @@ class InMemoryOperatorState(BaseOperatorState):
                 self.read_sets[operator_name][t_id] = {key}
         try:
             value = self.data[operator_name][key]
+            self.reads[operator_name][key] = min(self.reads[operator_name].get(key, t_id), t_id)
             return value
         except KeyError:
             logging.warning(f'Key: {key} does not exist')

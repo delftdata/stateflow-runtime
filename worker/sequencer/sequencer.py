@@ -48,5 +48,6 @@ class Sequencer:
                 distributed_log_set = set(self.distributed_log)
                 self.distributed_log = sorted(distributed_log_set.union(aborted_sequence_to_reschedule))
             self.epoch_counter += 1
-            self.t_counter = max(*remote_t_counters, self.t_counter)
+            if remote_t_counters:
+                self.t_counter = max(*remote_t_counters, self.t_counter)
             self.current_epoch = []

@@ -12,7 +12,9 @@ class BaseOperatorState(ABC):
     # read write sets
     read_sets: dict[str, dict[int, set[Any]]]  # operator_name: {t_id: set(keys)}
     write_sets: dict[str, dict[int, dict[Any, Any]]]  # operator_name: {t_id: {key: value}}
+    # the reads and writes with the lowest t_id
     writes: dict[str, dict[Any, int]]  # operator_name: {key: t_id}
+    reads: dict[str, dict[Any, int]]  # operator_name: {key: t_id}
     # the transactions that are aborted
     aborted_transactions: set[int]
 
@@ -48,19 +50,37 @@ class BaseOperatorState(ABC):
     async def commit(self, aborted_from_remote: set[int]):
         raise NotImplementedError
 
+    @staticmethod
+    def has_conflicts(t_id: int, keys, reservations):
+        for key in keys:
+            if key in reservations and reservations[key] < t_id:
+                return True
+        return False
+
     def check_conflicts(self) -> set[int]:
         for operator_name, write_set in self.write_sets.items():
             for t_id, ws in write_set.items():
                 ws = write_set[t_id]
                 rs = self.read_sets[operator_name].get(t_id, set())
                 keys = rs.union(set(ws.keys()))
-                for key in keys:
-                    if key in self.writes[operator_name] and self.writes[operator_name][key] < t_id:
-                        self.aborted_transactions.add(t_id)
+                if self.has_conflicts(t_id, keys, self.writes[operator_name]):
+                    self.aborted_transactions.add(t_id)
+        return self.aborted_transactions
+
+    def check_conflicts_deterministic_reordering(self) -> set[int]:
+        for operator_name, write_set in self.write_sets.items():
+            for t_id, ws in write_set.items():
+                rs = self.read_sets[operator_name].get(t_id, set())
+                waw = self.has_conflicts(t_id, ws, self.writes)
+                war = self.has_conflicts(t_id, ws, self.reads)
+                raw = self.has_conflicts(t_id, rs, self.writes)
+                if waw or (war and raw):
+                    self.aborted_transactions.add(t_id)
         return self.aborted_transactions
 
     def cleanup(self):
         self.write_sets = {operator_name: {} for operator_name in self.operator_names}
         self.writes = {operator_name: {} for operator_name in self.operator_names}
+        self.reads = {operator_name: {} for operator_name in self.operator_names}
         self.read_sets = {operator_name: {} for operator_name in self.operator_names}
         self.aborted_transactions = set()

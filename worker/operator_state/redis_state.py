@@ -37,6 +37,7 @@ class RedisOperatorState(BaseOperatorState):
         if db_value is None:
             raise ReadUncommitedException(f'Read uncommitted or does not exit in DB of key: {key}')
         else:
+            self.reads[operator_name][key] = min(self.reads[operator_name].get(key, t_id), t_id)
             value = msgpack_deserialization(db_value)
             return value
 

@@ -32,6 +32,7 @@ INGRESS_TYPE = os.getenv('INGRESS_TYPE', None)
 EGRESS_TOPIC_NAME: str = 'universalis-egress'
 EPOCH_INTERVAL = 0.01  # 10ms
 SEQUENCE_MAX_SIZE = 100
+DETERMINISTIC_REORDERING = False
 
 
 class Worker:
@@ -73,7 +74,6 @@ class Worker:
             if isinstance(response, Exception):
                 self.logic_aborts.add(t_id)
                 response = str(response)
-                logging.error(f'Application logic error: {response}')
             self.response_buffer[t_id] = (payload.request_id, response)
 
     async def send_commit_to_peers(self, aborted: set[int]):
@@ -117,7 +117,10 @@ class Worker:
                 logging.info(f'Chain proc finished in: {round((chain_done_time - end_proc_time) * 1000, 4)}ms')
                 # Check for local state conflicts
                 logging.info(f'Checking conflicts...')
-                aborted: set[int] = self.local_state.check_conflicts()
+                if DETERMINISTIC_REORDERING:
+                    aborted: set[int] = self.local_state.check_conflicts_deterministic_reordering()
+                else:
+                    aborted: set[int] = self.local_state.check_conflicts()
                 checking_conflicts_time = timer()
                 logging.info(f'Checking conflicts in: {round((checking_conflicts_time - chain_done_time) * 1000, 4)}ms')
                 # Notify peers that we are ready to commit
