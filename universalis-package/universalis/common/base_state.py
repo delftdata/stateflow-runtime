@@ -51,7 +51,7 @@ class BaseOperatorState(ABC):
         raise NotImplementedError
 
     @staticmethod
-    def has_conflicts(t_id: int, keys, reservations):
+    def has_conflicts(t_id: int, keys: set[Any], reservations: dict[Any, int]):
         for key in keys:
             if key in reservations and reservations[key] < t_id:
                 return True
@@ -60,20 +60,20 @@ class BaseOperatorState(ABC):
     def check_conflicts(self) -> set[int]:
         for operator_name, write_set in self.write_sets.items():
             for t_id, ws in write_set.items():
-                ws = write_set[t_id]
                 rs = self.read_sets[operator_name].get(t_id, set())
-                keys = rs.union(set(ws.keys()))
-                if self.has_conflicts(t_id, keys, self.writes[operator_name]):
+                read_write_set = rs.union(set(ws.keys()))
+                if self.has_conflicts(t_id, read_write_set, self.writes[operator_name]):
                     self.aborted_transactions.add(t_id)
         return self.aborted_transactions
 
     def check_conflicts_deterministic_reordering(self) -> set[int]:
         for operator_name, write_set in self.write_sets.items():
             for t_id, ws in write_set.items():
-                rs = self.read_sets[operator_name].get(t_id, set())
-                waw = self.has_conflicts(t_id, ws, self.writes)
-                war = self.has_conflicts(t_id, ws, self.reads)
-                raw = self.has_conflicts(t_id, rs, self.writes)
+                rs_keys = self.read_sets[operator_name].get(t_id, set())
+                ws_keys = set(ws.keys())
+                waw = self.has_conflicts(t_id, ws_keys, self.writes[operator_name])
+                war = self.has_conflicts(t_id, ws_keys, self.reads[operator_name])
+                raw = self.has_conflicts(t_id, rs_keys, self.writes[operator_name])
                 if waw or (war and raw):
                     self.aborted_transactions.add(t_id)
         return self.aborted_transactions

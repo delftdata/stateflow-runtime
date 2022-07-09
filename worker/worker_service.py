@@ -24,15 +24,16 @@ from worker.run_func_payload import RunFuncPayload, SequencedItem
 from worker.sequencer.sequencer import Sequencer
 
 
-SERVER_PORT = 8888
-DISCOVERY_HOST = os.environ['DISCOVERY_HOST']
-DISCOVERY_PORT = int(os.environ['DISCOVERY_PORT'])
+SERVER_PORT: int = 8888
+DISCOVERY_HOST: str = os.environ['DISCOVERY_HOST']
+DISCOVERY_PORT: int = int(os.environ['DISCOVERY_PORT'])
 KAFKA_URL: str = os.getenv('KAFKA_URL', None)
 INGRESS_TYPE = os.getenv('INGRESS_TYPE', None)
 EGRESS_TOPIC_NAME: str = 'universalis-egress'
-EPOCH_INTERVAL = 0.01  # 10ms
-SEQUENCE_MAX_SIZE = 100
-DETERMINISTIC_REORDERING = False
+EPOCH_INTERVAL: float = 0.01  # 10ms
+SEQUENCE_MAX_SIZE: int = 100
+DETERMINISTIC_REORDERING: bool = True
+FALLBACK_STRATEGY_PERCENTAGE: float = 0.2  # if more than 20% aborts use fallback strategy
 
 
 class Worker:
@@ -51,7 +52,8 @@ class Worker:
         self.peers: dict[int, tuple[str, int]] = {}  # worker_id: (host, port)
         # ready_to_commit_events -> worker_id: Event that appears if the peer is ready to commit
         self.ready_to_commit_events: dict[int, asyncio.Event] = {}
-        self.aborted_from_remote: dict[int, set[int]] = {}
+        self.aborted_from_remote: dict[int, set[int]] = {}  # worker_id: set of aborted t_ids
+        self.processed_seq_size: dict[int, int] = {}  # worker_id: size of the remote processed sequence
         self.logic_aborts: set[int] = set()
         self.logic_aborts_from_remote: dict[int, set[int]] = {}
         self.local_state: InMemoryOperatorState | RedisOperatorState | Stateless = Stateless()
@@ -76,13 +78,14 @@ class Worker:
                 response = str(response)
             self.response_buffer[t_id] = (payload.request_id, response)
 
-    async def send_commit_to_peers(self, aborted: set[int]):
+    async def send_commit_to_peers(self, aborted: set[int], processed_seq_size: int):
         for worker_id, url in self.peers.items():
             await self.scheduler.spawn(self.networking.send_message(url[0], url[1],
                                                                     {"__COM_TYPE__": 'CMT',
                                                                      "__MSG__": (self.id, list(aborted),
                                                                                  list(self.logic_aborts),
-                                                                                 self.sequencer.t_counter)},
+                                                                                 self.sequencer.t_counter,
+                                                                                 processed_seq_size)},
                                                                     Serializer.MSGPACK))
 
     async def send_responses(self, concurrency_aborts_everywhere: set, logic_aborts_everywhere: set):
@@ -126,7 +129,8 @@ class Worker:
                 # Notify peers that we are ready to commit
                 logging.info(f'Notify peers...')
                 commit_start = timer()
-                await self.send_commit_to_peers(aborted)
+
+                await self.send_commit_to_peers(aborted, len(sequence))
                 # Wait for remote to be ready to commit
                 wait_remote_commits_task = [event.wait()
                                             for event in self.ready_to_commit_events.values()]
@@ -144,6 +148,13 @@ class Worker:
                 logging.info(f'Sequence committed!')
                 await self.local_state.commit(remote_aborted.union(logic_aborts_everywhere))
                 aborts_for_next_epoch: set[int] = aborted.union(remote_aborted)
+                total_processed_functions: int = sum([self.processed_seq_size[worker_id]
+                                                      for worker_id in self.processed_seq_size.keys()]) + len(sequence)
+                abort_rate: float = len(aborts_for_next_epoch) / total_processed_functions
+                if abort_rate > FALLBACK_STRATEGY_PERCENTAGE:
+                    # TODO make fallback strategy work
+                    pass
+
                 await self.send_responses(aborts_for_next_epoch, logic_aborts_everywhere)
                 # Cleanup
                 await self.sequencer.increment_epoch(self.t_counters.values(), aborts_for_next_epoch)
@@ -154,10 +165,11 @@ class Worker:
                 logging.warning(f'Epoch: {self.sequencer.epoch_counter - 1} done in '
                                 f'{round((epoch_end - epoch_start)*1000, 4)}ms '
                                 f'processed: {len(run_function_tasks)} functions '
-                                f'initiated {len(chain_acks)} chains')
+                                f'initiated {len(chain_acks)} chains '
+                                f'abort rate: {abort_rate}')
             elif self.remote_wants_to_commit():
                 epoch_start = timer()
-                await self.send_commit_to_peers(set())
+                await self.send_commit_to_peers(set(), 0)
                 # Wait for remote to be ready to commit
                 wait_remote_commits_task = [event.wait()
                                             for event in self.ready_to_commit_events.values()]
@@ -258,9 +270,10 @@ class Worker:
                 await self.handle_execution_plan(message)
                 self.attach_state_to_operators()
             case 'CMT':
-                remote_worker_id, aborted, logic_aborts, remote_t_counter = message
+                remote_worker_id, aborted, logic_aborts, remote_t_counter, processed_seq_size = message
                 self.ready_to_commit_events[remote_worker_id].set()
                 self.aborted_from_remote[remote_worker_id] = set(aborted)
+                self.processed_seq_size[remote_worker_id] = processed_seq_size
                 self.logic_aborts_from_remote[remote_worker_id] = set(logic_aborts)
                 self.t_counters[remote_worker_id] = remote_t_counter
             case 'ACK':
