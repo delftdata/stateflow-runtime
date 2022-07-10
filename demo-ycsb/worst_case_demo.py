@@ -10,7 +10,7 @@ import ycsb
 from graph import ycsb_operator, g
 
 
-N_ROWS = 10
+N_ROWS = 1000
 
 UNIVERSALIS_HOST: str = 'localhost'
 UNIVERSALIS_PORT: int = 8886

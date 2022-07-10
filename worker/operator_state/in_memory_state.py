@@ -17,6 +17,9 @@ class InMemoryOperatorState(BaseOperatorState):
     async def put(self, key, value, t_id: int, operator_name: str):
         await super().put(key, value, t_id, operator_name)
 
+    async def put_immediate(self, key, value, operator_name: str):
+        self.data[operator_name][key] = value
+
     async def get(self, key, t_id: int, operator_name: str) -> Any:
         async with self.read_set_locks[operator_name]:
             if t_id in self.read_sets[operator_name]:
@@ -47,5 +50,4 @@ class InMemoryOperatorState(BaseOperatorState):
                     updates_to_commit.update(ws)
                     committed_t_ids.add(t_id)
             self.data[operator_name].update(updates_to_commit)
-        self.cleanup()
         return committed_t_ids

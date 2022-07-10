@@ -7,7 +7,7 @@ from worker.run_func_payload import RunFuncPayload, SequencedItem
 
 class Sequencer:
 
-    def __init__(self, max_size: int = 100):
+    def __init__(self, max_size: int = None):
         self.distributed_log: list[SequencedItem] = []
         self.current_epoch: list[SequencedItem] = []
         self.t_counter = 0
@@ -33,10 +33,12 @@ class Sequencer:
     async def get_epoch(self) -> list[SequencedItem]:
         async with self.distributed_log_lock:
             if len(self.distributed_log) > 0:
-                self.current_epoch = self.distributed_log[:self.max_size]
-                self.distributed_log = self.distributed_log[self.max_size:]
-                # self.current_epoch = self.distributed_log
-                # self.distributed_log = []
+                if self.max_size is None:
+                    self.current_epoch = self.distributed_log
+                    self.distributed_log = []
+                else:
+                    self.current_epoch = self.distributed_log[:self.max_size]
+                    self.distributed_log = self.distributed_log[self.max_size:]
                 return self.current_epoch
 
     async def increment_epoch(self, remote_t_counters, aborted: set[int] = None):
@@ -51,3 +53,11 @@ class Sequencer:
             if remote_t_counters:
                 self.t_counter = max(*remote_t_counters, self.t_counter)
             self.current_epoch = []
+
+    async def get_aborted_sequence(self, aborted: set[int]) -> set[SequencedItem]:
+        async with self.distributed_log_lock:
+            if len(aborted) > 0:
+                aborted_sequence: set[SequencedItem] = {item for item in self.current_epoch
+                                                        if item.t_id in aborted}
+                return aborted_sequence
+        return set()

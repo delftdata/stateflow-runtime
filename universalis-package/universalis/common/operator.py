@@ -1,3 +1,4 @@
+import logging
 from typing import Awaitable, Type
 
 from .function_definition import FunctionDefinition
@@ -31,7 +32,9 @@ class Operator(BaseOperator):
                            timestamp: int,
                            function_name: str,
                            ack_payload: tuple[str, int, str],
+                           wait_completion_events,
                            *params) -> Awaitable:
+        logging.info(f'TID: {t_id}  function: {function_name} ')
         function = self.functions[function_name].materialize_function(self.state,
                                                                       self.networking,
                                                                       timestamp,
@@ -42,7 +45,10 @@ class Operator(BaseOperator):
         if ack_payload is not None:
             # part of a chain (not root)
             ack_host, ack_id, fraction_str = ack_payload
-            resp = await function(*params, ack_share=fraction_str)
+            if wait_completion_events is not None:
+                resp = await function(*params, ack_share=fraction_str, fallback_enabled=True)
+            else:
+                resp = await function(*params, ack_share=fraction_str)
             if not isinstance(resp, Exception):
                 resp, n_remote_calls = resp
                 if n_remote_calls == 0:
@@ -56,7 +62,10 @@ class Operator(BaseOperator):
                                                                            "__MSG__": (ack_id, '-1')},
                                                    Serializer.MSGPACK)
         else:
-            resp = await function(*params)
+            if wait_completion_events is not None:
+                resp = await function(*params, fallback_enabled=True)
+            else:
+                resp = await function(*params)
             if not isinstance(resp, Exception):
                 resp, _ = resp
         del function
