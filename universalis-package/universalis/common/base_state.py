@@ -12,7 +12,9 @@ class BaseOperatorState(ABC):
     # read write sets
     read_sets: dict[str, dict[int, set[Any]]]  # operator_name: {t_id: set(keys)}
     write_sets: dict[str, dict[int, dict[Any, Any]]]  # operator_name: {t_id: {key: value}}
+    # the reads and writes with the lowest t_id
     writes: dict[str, dict[Any, int]]  # operator_name: {key: t_id}
+    reads: dict[str, dict[Any, int]]  # operator_name: {key: t_id}
     # the transactions that are aborted
     aborted_transactions: set[int]
 
@@ -33,6 +35,10 @@ class BaseOperatorState(ABC):
             self.writes[operator_name][key] = min(self.writes[operator_name].get(key, t_id), t_id)
 
     @abstractmethod
+    async def put_immediate(self, key, value, operator_name: str):
+        raise NotImplementedError
+
+    @abstractmethod
     async def get(self, key, t_id: int, operator_name: str):
         raise NotImplementedError
 
@@ -48,19 +54,48 @@ class BaseOperatorState(ABC):
     async def commit(self, aborted_from_remote: set[int]):
         raise NotImplementedError
 
+    def get_dependency_graph(self, aborted_t_ids: set[int]) -> dict[int, dict[str, set[Any]]]:
+        t_dependencies: dict[int, dict[str, set[Any]]] = {}   # tid: {operator_name: {set of keys}}
+        for operator_name, write_set in self.write_sets.items():
+            for t_id, ws in write_set.items():
+                if t_id in aborted_t_ids:
+                    ws_keys: set[Any] = set(ws.keys())
+                    rs_keys: set[Any] = self.read_sets[operator_name].get(t_id, set())
+                    t_dependencies[t_id] = {operator_name: ws_keys.union(rs_keys)}
+        t_dependencies = {key: t_dependencies[key] for key in sorted(t_dependencies.keys())}  # sort by t_id
+        return t_dependencies
+
+    @staticmethod
+    def has_conflicts(t_id: int, keys: set[Any], reservations: dict[Any, int]):
+        for key in keys:
+            if key in reservations and reservations[key] < t_id:
+                return True
+        return False
+
     def check_conflicts(self) -> set[int]:
         for operator_name, write_set in self.write_sets.items():
             for t_id, ws in write_set.items():
-                ws = write_set[t_id]
                 rs = self.read_sets[operator_name].get(t_id, set())
-                keys = rs.union(set(ws.keys()))
-                for key in keys:
-                    if key in self.writes[operator_name] and self.writes[operator_name][key] < t_id:
-                        self.aborted_transactions.add(t_id)
+                read_write_set = rs.union(set(ws.keys()))
+                if self.has_conflicts(t_id, read_write_set, self.writes[operator_name]):
+                    self.aborted_transactions.add(t_id)
+        return self.aborted_transactions
+
+    def check_conflicts_deterministic_reordering(self) -> set[int]:
+        for operator_name, write_set in self.write_sets.items():
+            for t_id, ws in write_set.items():
+                rs_keys = self.read_sets[operator_name].get(t_id, set())
+                ws_keys = set(ws.keys())
+                waw = self.has_conflicts(t_id, ws_keys, self.writes[operator_name])
+                war = self.has_conflicts(t_id, ws_keys, self.reads[operator_name])
+                raw = self.has_conflicts(t_id, rs_keys, self.writes[operator_name])
+                if waw or (war and raw):
+                    self.aborted_transactions.add(t_id)
         return self.aborted_transactions
 
     def cleanup(self):
         self.write_sets = {operator_name: {} for operator_name in self.operator_names}
         self.writes = {operator_name: {} for operator_name in self.operator_names}
+        self.reads = {operator_name: {} for operator_name in self.operator_names}
         self.read_sets = {operator_name: {} for operator_name in self.operator_names}
         self.aborted_transactions = set()

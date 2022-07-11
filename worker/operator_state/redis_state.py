@@ -25,6 +25,9 @@ class RedisOperatorState(BaseOperatorState):
         value = msgpack_serialization(value)
         await super().put(key, value, t_id, operator_name)
 
+    async def put_immediate(self, key, value, operator_name: str):
+        await self.redis_connections[operator_name].set(key, msgpack_serialization(value))
+
     async def get(self, key, t_id: int, operator_name: str):
         logging.info(f'GET: {key} with t_id: {t_id} operator: {operator_name}')
         async with self.read_set_locks[operator_name]:
@@ -37,6 +40,7 @@ class RedisOperatorState(BaseOperatorState):
         if db_value is None:
             raise ReadUncommitedException(f'Read uncommitted or does not exit in DB of key: {key}')
         else:
+            self.reads[operator_name][key] = min(self.reads[operator_name].get(key, t_id), t_id)
             value = msgpack_deserialization(db_value)
             return value
 
@@ -54,7 +58,6 @@ class RedisOperatorState(BaseOperatorState):
                                                           for operator_name in self.write_sets.keys()])
         for t_ids in committed_operator_t_ids:
             committed_t_ids = committed_t_ids.union(t_ids)
-        self.cleanup()
         return committed_t_ids
 
     async def commit_operator(self, operator_name: str):

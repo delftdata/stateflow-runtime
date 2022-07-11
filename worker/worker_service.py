@@ -3,6 +3,7 @@ import itertools
 import os
 import time
 from timeit import default_timer as timer
+from typing import Any
 
 import aiojobs
 import aiozmq
@@ -24,14 +25,16 @@ from worker.run_func_payload import RunFuncPayload, SequencedItem
 from worker.sequencer.sequencer import Sequencer
 
 
-SERVER_PORT = 8888
-DISCOVERY_HOST = os.environ['DISCOVERY_HOST']
-DISCOVERY_PORT = int(os.environ['DISCOVERY_PORT'])
+SERVER_PORT: int = 8888
+DISCOVERY_HOST: str = os.environ['DISCOVERY_HOST']
+DISCOVERY_PORT: int = int(os.environ['DISCOVERY_PORT'])
 KAFKA_URL: str = os.getenv('KAFKA_URL', None)
 INGRESS_TYPE = os.getenv('INGRESS_TYPE', None)
 EGRESS_TOPIC_NAME: str = 'universalis-egress'
-EPOCH_INTERVAL = 0.01  # 10ms
-SEQUENCE_MAX_SIZE = 100
+EPOCH_INTERVAL: float = 0.01  # 10ms
+SEQUENCE_MAX_SIZE: int = 100
+DETERMINISTIC_REORDERING: bool = True
+FALLBACK_STRATEGY_PERCENTAGE: float = 0.1  # if more than 10% aborts use fallback strategy
 
 
 class Worker:
@@ -50,7 +53,8 @@ class Worker:
         self.peers: dict[int, tuple[str, int]] = {}  # worker_id: (host, port)
         # ready_to_commit_events -> worker_id: Event that appears if the peer is ready to commit
         self.ready_to_commit_events: dict[int, asyncio.Event] = {}
-        self.aborted_from_remote: dict[int, set[int]] = {}
+        self.aborted_from_remote: dict[int, set[int]] = {}  # worker_id: set of aborted t_ids
+        self.processed_seq_size: dict[int, int] = {}  # worker_id: size of the remote processed sequence
         self.logic_aborts: set[int] = set()
         self.logic_aborts_from_remote: dict[int, set[int]] = {}
         self.local_state: InMemoryOperatorState | RedisOperatorState | Stateless = Stateless()
@@ -58,14 +62,22 @@ class Worker:
         self.response_buffer: dict[int, tuple] = {}  # t_id: (request_id, response)
         self.operator_functions: dict[str, str] = {}  # function_name: operator_name
 
-    async def run_function(self, t_id: int, payload: RunFuncPayload, ack_payload=None):
+    async def run_function(self,
+                           t_id: int,
+                           payload: RunFuncPayload,
+                           ack_payload=None,
+                           wait_completion_events: list[asyncio.Event] = None):
         operator_partition = self.registered_operators[(payload.operator_name, payload.partition)]
         response = await operator_partition.run_function(t_id,
                                                          payload.request_id,
                                                          payload.timestamp,
                                                          payload.function_name,
                                                          ack_payload,
+                                                         wait_completion_events,
                                                          *payload.params)
+        if wait_completion_events is not None:
+            [ev.set() for ev in wait_completion_events]
+
         if payload.response_socket is not None:
             self.router.write((payload.response_socket, self.networking.encode_message(response,
                                                                                        Serializer.MSGPACK)))
@@ -75,13 +87,14 @@ class Worker:
                 response = str(response)
             self.response_buffer[t_id] = (payload.request_id, response)
 
-    async def send_commit_to_peers(self, aborted: set[int]):
+    async def send_commit_to_peers(self, aborted: set[int], processed_seq_size: int):
         for worker_id, url in self.peers.items():
             await self.scheduler.spawn(self.networking.send_message(url[0], url[1],
                                                                     {"__COM_TYPE__": 'CMT',
                                                                      "__MSG__": (self.id, list(aborted),
                                                                                  list(self.logic_aborts),
-                                                                                 self.sequencer.t_counter)},
+                                                                                 self.sequencer.t_counter,
+                                                                                 processed_seq_size)},
                                                                     Serializer.MSGPACK))
 
     async def send_responses(self, concurrency_aborts_everywhere: set, logic_aborts_everywhere: set):
@@ -92,6 +105,59 @@ class Worker:
                     self.kafka_egress_producer.send_and_wait(EGRESS_TOPIC_NAME,
                                                              key=response[0],
                                                              value=msgpack_serialization(response[1])))
+
+    async def run_fallback_function(self,
+                                    sequenced_item: SequencedItem,
+                                    waiting_on_transactions: dict[int, asyncio.Event],
+                                    wait_completion_events: list[asyncio.Event]):
+        waiting_on_transactions_tasks = [dependency.wait()
+                                         for dependency in waiting_on_transactions.values()]
+        # Wait for all transactions that this transaction depends on to finish
+        await asyncio.gather(*waiting_on_transactions_tasks)
+        # Run transaction
+        await self.run_function(sequenced_item.t_id,
+                                sequenced_item.payload,
+                                wait_completion_events=wait_completion_events)
+
+    async def run_fallback_strategy(self, aborts_for_next_epoch: set[int]):
+        logging.info('Too many concurrency aborts! Starting fallback strategy...')
+        aborted_sequence: set[SequencedItem] = await self.sequencer.get_aborted_sequence(aborts_for_next_epoch)
+        # t_id: {operator: keys}
+        t_dependencies: dict[int, dict[str, set[Any]]] = self.local_state.get_dependency_graph(aborts_for_next_epoch)
+        # (operator, key): {t_id depends on: completion event} sorted by lowest t_id
+        waiting_on_transactions: dict[int, dict[int, asyncio.Event]] = {}
+        # t_id: list of all the dependant transaction events
+        waiting_on_transactions_index: dict[int, list[asyncio.Event]] = {}
+        # (operator, key): set of transactions that depend on the key
+        dibs: dict[tuple[str, Any], set[int]] = {}
+        for t_id, dependencies in t_dependencies.items():
+            for operator_name, keys in dependencies.items():
+                for key in keys:
+                    key_id = (operator_name, key)
+                    if key_id in dibs:
+                        for dep_t_id in dibs[key_id]:
+                            event = asyncio.Event()
+                            if t_id in waiting_on_transactions:
+                                waiting_on_transactions[t_id].update({dep_t_id: event})
+                            else:
+                                waiting_on_transactions[t_id] = {dep_t_id: event}
+                            if dep_t_id in waiting_on_transactions_index:
+                                waiting_on_transactions_index[dep_t_id].append(event)
+                            else:
+                                waiting_on_transactions_index[dep_t_id] = [event]
+                        dibs[key_id].add(t_id)
+                    else:
+                        dibs[key_id] = {t_id}
+        fallback_tasks = []
+        # DIBS DONE
+        for sequenced_item in aborted_sequence:
+            sequenced_function_is_waiting_on = waiting_on_transactions.get(sequenced_item.t_id, {})
+            wait_completion_events = waiting_on_transactions_index.get(sequenced_item.t_id, [])
+            fallback_tasks.append(self.run_fallback_function(sequenced_item,
+                                                             sequenced_function_is_waiting_on,
+                                                             wait_completion_events))
+        await asyncio.gather(*fallback_tasks)
+        logging.info('Fallback strategy completed!')
 
     async def function_scheduler(self):
         while True:
@@ -116,13 +182,17 @@ class Worker:
                 logging.info(f'Chain proc finished in: {round((chain_done_time - end_proc_time) * 1000, 4)}ms')
                 # Check for local state conflicts
                 logging.info(f'Checking conflicts...')
-                aborted: set[int] = self.local_state.check_conflicts()
+                if DETERMINISTIC_REORDERING:
+                    aborted: set[int] = self.local_state.check_conflicts_deterministic_reordering()
+                else:
+                    aborted: set[int] = self.local_state.check_conflicts()
                 checking_conflicts_time = timer()
                 logging.info(f'Checking conflicts in: {round((checking_conflicts_time - chain_done_time) * 1000, 4)}ms')
                 # Notify peers that we are ready to commit
                 logging.info(f'Notify peers...')
                 commit_start = timer()
-                await self.send_commit_to_peers(aborted)
+
+                await self.send_commit_to_peers(aborted, len(sequence))
                 # Wait for remote to be ready to commit
                 wait_remote_commits_task = [event.wait()
                                             for event in self.ready_to_commit_events.values()]
@@ -140,6 +210,13 @@ class Worker:
                 logging.info(f'Sequence committed!')
                 await self.local_state.commit(remote_aborted.union(logic_aborts_everywhere))
                 aborts_for_next_epoch: set[int] = aborted.union(remote_aborted)
+                total_processed_functions: int = sum([self.processed_seq_size[worker_id]
+                                                      for worker_id in self.processed_seq_size.keys()]) + len(sequence)
+                abort_rate: float = len(aborts_for_next_epoch) / total_processed_functions
+                if abort_rate > FALLBACK_STRATEGY_PERCENTAGE:
+                    await self.run_fallback_strategy(aborts_for_next_epoch)
+                    aborts_for_next_epoch = set()
+                    abort_rate = 0
                 await self.send_responses(aborts_for_next_epoch, logic_aborts_everywhere)
                 # Cleanup
                 await self.sequencer.increment_epoch(self.t_counters.values(), aborts_for_next_epoch)
@@ -147,13 +224,14 @@ class Worker:
                 self.cleanup_after_epoch()
                 epoch_end = timer()
                 logging.info(f'Commit took: {round((epoch_end - commit_start) * 1000, 4)}ms')
-                logging.info(f'Epoch: {self.sequencer.epoch_counter - 1} done in '
-                             f'{round((epoch_end - epoch_start)*1000, 4)}ms '
-                             f'processed: {len(run_function_tasks)} functions '
-                             f'initiated {len(chain_acks)} chains')
+                logging.warning(f'Epoch: {self.sequencer.epoch_counter - 1} done in '
+                                f'{round((epoch_end - epoch_start)*1000, 4)}ms '
+                                f'processed: {len(run_function_tasks)} functions '
+                                f'initiated {len(chain_acks)} chains '
+                                f'abort rate: {abort_rate}')
             elif self.remote_wants_to_commit():
                 epoch_start = timer()
-                await self.send_commit_to_peers(set())
+                await self.send_commit_to_peers(set(), 0)
                 # Wait for remote to be ready to commit
                 wait_remote_commits_task = [event.wait()
                                             for event in self.ready_to_commit_events.values()]
@@ -162,9 +240,9 @@ class Worker:
                 await self.sequencer.increment_epoch(self.t_counters.values())
                 self.cleanup_after_epoch()
                 epoch_end = timer()
-                logging.info(f'Epoch: {self.sequencer.epoch_counter - 1} done in '
-                             f'{round((epoch_end - epoch_start)*1000, 4)}ms '
-                             f'processed 0 functions directly')
+                logging.warning(f'Epoch: {self.sequencer.epoch_counter - 1} done in '
+                                f'{round((epoch_end - epoch_start)*1000, 4)}ms '
+                                f'processed 0 functions directly')
 
     def cleanup_after_epoch(self):
         for event in self.ready_to_commit_events.values():
@@ -175,6 +253,7 @@ class Worker:
         self.t_counters = {}
         self.networking.cleanup_after_epoch()
         self.response_buffer = {}
+        self.local_state.cleanup()
 
     def remote_wants_to_commit(self) -> bool:
         for ready_to_commit_event in self.ready_to_commit_events.values():
@@ -254,9 +333,10 @@ class Worker:
                 await self.handle_execution_plan(message)
                 self.attach_state_to_operators()
             case 'CMT':
-                remote_worker_id, aborted, logic_aborts, remote_t_counter = message
+                remote_worker_id, aborted, logic_aborts, remote_t_counter, processed_seq_size = message
                 self.ready_to_commit_events[remote_worker_id].set()
                 self.aborted_from_remote[remote_worker_id] = set(aborted)
+                self.processed_seq_size[remote_worker_id] = processed_seq_size
                 self.logic_aborts_from_remote[remote_worker_id] = set(logic_aborts)
                 self.t_counters[remote_worker_id] = remote_t_counter
             case 'ACK':

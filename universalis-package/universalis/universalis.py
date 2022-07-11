@@ -22,6 +22,10 @@ class NotAStateflowGraph(Exception):
     pass
 
 
+class GraphNotSerializable(Exception):
+    pass
+
+
 class Universalis:
 
     def __init__(self,
@@ -39,7 +43,7 @@ class Universalis:
         elif ingress_type == IngressTypes.KAFKA:
             self.kafka_url = kafka_url
             self.kafka_producer = None
-            asyncio.get_event_loop().create_task(self.start_kafka_producer())
+            self.kafka_producer_task = asyncio.get_event_loop().create_task(self.start_kafka_producer())
             logging.info(f'KAFKA INITIALIZED')
 
     @staticmethod
@@ -51,15 +55,30 @@ class Universalis:
                 modules.add(types.ModuleType(function.function_definition.__module__))
         return modules
 
-    async def submit(self, stateflow_graph: StateflowGraph):
+    @staticmethod
+    def check_serializability(stateflow_graph):
+        try:
+            ser = cloudpickle.dumps(stateflow_graph)
+            cloudpickle.loads(ser)
+        except Exception:
+            raise GraphNotSerializable("The submitted graph is not serializable, "
+                                       "all external modules should be declared")
+
+    async def submit(self, stateflow_graph: StateflowGraph, external_modules: tuple = None):
         logging.info(f'Submitting Stateflow graph: {stateflow_graph.name}')
         if not isinstance(stateflow_graph, StateflowGraph):
             raise NotAStateflowGraph
         modules = self.get_modules(stateflow_graph)
         system_module_name = __name__.split('.')[0]
         for module in modules:
-            if not module.__name__.startswith(system_module_name):  # exclude system modules
+            if not module.__name__.startswith(system_module_name) and not module.__name__.startswith("stateflow"):  # exclude system modules
                 cloudpickle.register_pickle_by_value(module)
+        if external_modules is not None:
+            for external_module in external_modules:
+                cloudpickle.register_pickle_by_value(external_module)
+
+        self.check_serializability(stateflow_graph)
+
         await self.send_execution_graph(stateflow_graph)
         logging.info(f'Submission of Stateflow graph: {stateflow_graph.name} completed')
 
@@ -86,12 +105,13 @@ class Universalis:
     async def send_kafka_event(self,
                                operator: BaseOperator,
                                key,
-                               function: Type,
+                               function: Type | str,
                                params: tuple):
         partition: int = make_key_hashable(key) % operator.n_partitions
+        fun_name: str = function if isinstance(function, str) else function.__name__
         event = {'__OP_NAME__': operator.name,
                  '__KEY__': key,
-                 '__FUN_NAME__': function.__name__,
+                 '__FUN_NAME__': fun_name,
                  '__PARAMS__': params,
                  '__PARTITION__': partition}
         request_id = uuid.uuid1().int >> 64

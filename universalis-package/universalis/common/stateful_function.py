@@ -57,8 +57,11 @@ class StatefulFunction(Function):
         self.request_id: str = request_id
         self.async_remote_calls: list[tuple[str, str, object, tuple]] = []
         self.operator_functions: dict[str, str] = operator_functions
+        self.fallback_enabled: bool = False
 
     async def __call__(self, *args, **kwargs):
+        if 'fallback_enabled' in kwargs:
+            self.fallback_enabled = kwargs['fallback_enabled']
         try:
             res = await self.run(*args)
             if 'ack_share' in kwargs:
@@ -80,7 +83,10 @@ class StatefulFunction(Function):
         return await self.state.get(key, self.t_id, self.operator_name)
 
     async def put(self, key, value):
-        await self.state.put(key, value, self.t_id, self.operator_name)
+        if self.fallback_enabled:
+            await self.state.put_immediate(key, value, self.operator_name)
+        else:
+            await self.state.put(key, value, self.t_id, self.operator_name)
 
     async def send_async_calls(self, ack_share=1):
         n_remote_calls: int = len(self.async_remote_calls)
