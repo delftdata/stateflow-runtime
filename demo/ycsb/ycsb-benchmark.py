@@ -2,6 +2,7 @@ import asyncio
 import random
 import time
 import pandas as pd
+import os
 
 import uvloop
 from universalis.common.stateflow_ingress import IngressTypes
@@ -68,18 +69,18 @@ async def main():
                 key2 = keys[next(zipf_gen)]
             tasks.append(universalis.send_kafka_event(ycsb_operator, key, ycsb.Transfer, (key, key2)))
     responses = await asyncio.gather(*tasks)
+
     for request_id, timestamp in responses:
         timestamped_request_ids[request_id] = timestamp
 
     print(operation_counts)
-
     print('Transaction Mix Complete')
     time.sleep(1)
 
     await universalis.close()
 
-    pd.DataFrame(timestamped_request_ids.items(), columns=['request_id', 'timestamp'])\
-        .to_csv('demo/requests.csv', index=False)
+    filename = os.getcwd() + '/demo/requests.csv'
+    pd.DataFrame(timestamped_request_ids.items(), columns=['request_id', 'timestamp']).to_csv(filename, index=False)
 
 if __name__ == "__main__":
     uvloop.install()
