@@ -7,8 +7,8 @@ import numpy as np
 import pandas as pd
 
 
-def main():
-    benchmark_dir = os.getcwd() + '/bench'
+def calculate():
+    benchmark_dir = os.getcwd()
 
     requests_filename = benchmark_dir + '/requests.csv'
     requests = pd.read_csv(requests_filename)
@@ -55,9 +55,10 @@ def main():
     throughputs = pd.DataFrame(data=throughput.items(), columns=['second', 'throughput'])
     throughputs_filename = benchmark_dir + '/throughputs.csv'
     throughputs.to_csv(throughputs_filename, index=False)
+    tp = throughputs['throughput']
 
-    print(f'max throughput: {max(throughputs)}ms')
-    print(f'average throughput: {np.average(throughputs)}ms')
+    print(f'max throughput: {max(tp)}')
+    print(f'average throughput: {np.average(tp)}')
 
     worker_abort_rate_files = pathlib.Path(benchmark_dir)
     worker_abort_rates = {}
@@ -81,7 +82,3 @@ def main():
 
     average = np.average(abort_rates['abort_rate'])
     print(f'average abort rate: {np.average(average)}')
-
-
-if __name__ == "__main__":
-    main()

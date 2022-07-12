@@ -9,9 +9,9 @@ import uvloop
 from universalis.common.stateflow_ingress import IngressTypes
 from universalis.universalis import Universalis
 
-from functions import ycsb
-from graph import ycsb_operator, g
-from zipfian_generator import ZipfGenerator
+from ycsb.functions import ycsb
+from ycsb.graph import ycsb_operator, g
+from ycsb.zipfian_generator import ZipfGenerator
 
 
 class YcsbBenchmark:
@@ -37,11 +37,11 @@ class YcsbBenchmark:
         )
 
         await self.universalis.submit(g)
-        await asyncio.sleep(1)
-        print('Graph submitted')
+        await asyncio.sleep(2)
+        logging.info('Graph submitted')
 
     async def insert_records(self):
-        print('Inserting')
+        logging.info('Inserting')
         tasks = []
 
         for i in self.keys:
@@ -52,11 +52,11 @@ class YcsbBenchmark:
                 params=(i,))
             )
         await asyncio.gather(*tasks)
-        print(f'All {self.N_ROWS} Records Inserted')
+        logging.info(f'All {self.N_ROWS} Records Inserted')
         await asyncio.sleep(2)
 
     async def run_transaction_mix(self):
-        print('Running Transaction Mix')
+        logging.info('Running Transaction Mix')
         zipf_gen = ZipfGenerator(items=self.N_ROWS)
         tasks = []
 
@@ -75,8 +75,8 @@ class YcsbBenchmark:
 
         responses = await asyncio.gather(*tasks)
 
-        print(self.operation_counts)
-        print('Transaction Mix Complete')
+        logging.info(self.operation_counts)
+        logging.info('Transaction Mix Complete')
 
         await asyncio.sleep(1)
         return responses
@@ -89,7 +89,7 @@ class YcsbBenchmark:
 
         for request_id, timestamp in responses:
             timestamped_request_ids[request_id] = timestamp
-            filename = os.getcwd() + '/bench/requests.csv'
+            filename = os.getcwd() + '/requests.csv'
 
         pd.DataFrame(timestamped_request_ids.items(), columns=['request_id', 'timestamp']).to_csv(
             filename,
@@ -97,15 +97,8 @@ class YcsbBenchmark:
             )
 
     async def run(self):
-        logging.basicConfig(level=logging.DEBUG)
         await self.initialise()
         await self.insert_records()
         responses = await self.run_transaction_mix()
         await self.cleanup()
         self.generate_request_data(responses)
-
-
-if __name__ == "__main__":
-    uvloop.install()
-    bench = YcsbBenchmark()
-    asyncio.run(bench.run())

@@ -63,11 +63,5 @@ class BenchmarkConsumer:
         await self.consumer.stop()
 
         responses = pd.DataFrame.from_records(self.records, columns=['request_id', 'response', 'timestamp'])
-        responses_filename = os.getcwd() + '/bench/responses.csv'
+        responses_filename = os.getcwd() + '/responses.csv'
         responses.to_csv(responses_filename, index=False)
-
-
-if __name__ == "__main__":
-    uvloop.install()
-    uoc = BenchmarkConsumer()
-    asyncio.run(uoc.run())
