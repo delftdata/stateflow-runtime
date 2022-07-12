@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.INFO)
 
 class BenchmarkConsumer:
     # Time to wait after last message before stopping connection to the Kafka queue
-    LAST_MESSAGE_TIMEOUT = 10
+    LAST_MESSAGE_TIMEOUT = 5
     consumer: AIOKafkaConsumer
 
     def __init__(self):
@@ -62,15 +62,9 @@ class BenchmarkConsumer:
         logging.info("Writing...")
         await self.consumer.stop()
 
-        requests_filename = os.getcwd() + '/bench/requests.csv'
-        requests = pd.read_csv(requests_filename)
-        os.remove(requests_filename)
-
         responses = pd.DataFrame.from_records(self.records, columns=['request_id', 'response', 'timestamp'])
-        results = pd.merge(requests, responses, on='request_id', how='outer')
-        results['runtime'] = results['timestamp_y'] - results['timestamp_x']
-        results_filename = os.getcwd() + '/bench/results.csv'
-        results.to_csv(results_filename, index=False)
+        responses_filename = os.getcwd() + '/bench/responses.csv'
+        responses.to_csv(responses_filename, index=False)
 
 
 if __name__ == "__main__":

@@ -53,7 +53,7 @@ class YcsbBenchmark:
             )
         await asyncio.gather(*tasks)
         print(f'All {self.N_ROWS} Records Inserted')
-        await asyncio.sleep(5)
+        await asyncio.sleep(2)
 
     async def run_transaction_mix(self):
         print('Running Transaction Mix')
