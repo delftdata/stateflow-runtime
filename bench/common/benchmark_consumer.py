@@ -1,7 +1,7 @@
 import asyncio
-import logging
 import os
 import time
+import logging
 from asyncio import Event, Lock
 
 import pandas as pd
@@ -12,7 +12,7 @@ from universalis.common.serialization import msgpack_deserialization
 logging.basicConfig(level=logging.INFO)
 
 
-class UniversalisOutputConsumer:
+class BenchmarkConsumer:
     # Time to wait after last message before stopping connection to the Kafka queue
     LAST_MESSAGE_TIMEOUT = 10
     consumer: AIOKafkaConsumer
@@ -35,12 +35,15 @@ class UniversalisOutputConsumer:
 
     async def consume_messages(self):
         logging.info("Consuming...")
-        async for msg in self.consumer:
-            self.records.append((msg.key, msg.value, msg.timestamp))
-            async with self.last_message_time_lock:
-                self.last_message_time = time.time()
+        try:
+            async for msg in self.consumer:
+                self.records.append((msg.key, msg.value, msg.timestamp))
+                async with self.last_message_time_lock:
+                    self.last_message_time = time.time()
 
-            await asyncio.sleep(0.001)
+                await asyncio.sleep(0.001)
+        except:
+            await self.consumer.stop()
 
     async def run(self):
         self.consumer: AIOKafkaConsumer = AIOKafkaConsumer(
@@ -59,18 +62,18 @@ class UniversalisOutputConsumer:
         logging.info("Writing...")
         await self.consumer.stop()
 
-        requests_filename = os.getcwd() + '/demo/requests.csv'
+        requests_filename = os.getcwd() + '/bench/requests.csv'
         requests = pd.read_csv(requests_filename)
         os.remove(requests_filename)
 
         responses = pd.DataFrame.from_records(self.records, columns=['request_id', 'response', 'timestamp'])
         results = pd.merge(requests, responses, on='request_id', how='outer')
         results['runtime'] = results['timestamp_y'] - results['timestamp_x']
-        results_filename = os.getcwd() + '/demo/results.csv'
+        results_filename = os.getcwd() + '/bench/results.csv'
         results.to_csv(results_filename, index=False)
 
 
 if __name__ == "__main__":
     uvloop.install()
-    uoc = UniversalisOutputConsumer()
+    uoc = BenchmarkConsumer()
     asyncio.run(uoc.run())

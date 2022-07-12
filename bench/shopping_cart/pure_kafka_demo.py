@@ -6,8 +6,8 @@ import uvloop
 from universalis.common.stateflow_ingress import IngressTypes
 from universalis.universalis import Universalis
 
-from demo.functions import order, stock, user, graph
-from demo.functions.graph import user_operator, stock_operator, order_operator
+from bench.functions import order, stock, user, graph
+from bench.functions.graph import user_operator, stock_operator, order_operator
 
 N_USERS = 5000
 USER_STARTING_CREDIT = 1000

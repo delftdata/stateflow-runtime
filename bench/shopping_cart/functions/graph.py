@@ -2,7 +2,7 @@ from universalis.common.local_state_backends import LocalStateBackend
 from universalis.common.operator import Operator
 from universalis.common.stateflow_graph import StateflowGraph
 
-from demo.shopping_cart.functions import order, stock, user
+from bench.shopping_cart.functions import order, stock, user
 
 ####################################################################################################################
 # DECLARE A STATEFLOW GRAPH ########################################################################################

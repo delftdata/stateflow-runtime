@@ -21,3 +21,5 @@ services:
       - KAFKA_URL=kafka1:9092
       - DISCOVERY_HOST=coordinator
       - DISCOVERY_PORT=8888
+    volumes:
+      - ./bench:/usr/local/universalis/bench

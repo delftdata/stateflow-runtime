@@ -9,6 +9,8 @@ import aiojobs
 import aiozmq
 import uvloop
 import zmq
+import pandas as pd
+
 from aiokafka import AIOKafkaConsumer, TopicPartition, AIOKafkaProducer
 from aiokafka.errors import UnknownTopicOrPartitionError, KafkaConnectionError
 
@@ -35,6 +37,7 @@ EPOCH_INTERVAL: float = 0.01  # 10ms
 SEQUENCE_MAX_SIZE: int = 100
 DETERMINISTIC_REORDERING: bool = True
 FALLBACK_STRATEGY_PERCENTAGE: float = 0.1  # if more than 10% aborts use fallback strategy
+ABORT_RATE_OUTPUT_INTERVAL = 4 # Intervals between abort rate measurements
 
 
 class Worker:
@@ -61,6 +64,7 @@ class Worker:
         self.t_counters: dict[int, int] = {}
         self.response_buffer: dict[int, tuple] = {}  # t_id: (request_id, response)
         self.operator_functions: dict[str, str] = {}  # function_name: operator_name
+        self.abort_rates: dict[int, float] = {} # epoch_number: abort rate
 
     async def run_function(self,
                            t_id: int,
@@ -160,6 +164,8 @@ class Worker:
         logging.info('Fallback strategy completed!')
 
     async def function_scheduler(self):
+        last_measured = timer()
+
         while True:
             await asyncio.sleep(EPOCH_INTERVAL)  # EPOCH TIMER
             sequence: list[SequencedItem] = await self.sequencer.get_epoch()  # GET SEQUENCE
@@ -171,6 +177,7 @@ class Worker:
                                                                               sequenced_item.payload))
                                       for sequenced_item in sequence]
                 await asyncio.gather(*run_function_tasks)
+
                 # Wait for chains to finish
                 end_proc_time = timer()
                 logging.info(f'Functions finished in: {round((end_proc_time - epoch_start)*1000, 4)}ms')
@@ -180,6 +187,7 @@ class Worker:
                 await asyncio.gather(*chain_acks)
                 chain_done_time = timer()
                 logging.info(f'Chain proc finished in: {round((chain_done_time - end_proc_time) * 1000, 4)}ms')
+
                 # Check for local state conflicts
                 logging.info(f'Checking conflicts...')
                 if DETERMINISTIC_REORDERING:
@@ -188,16 +196,19 @@ class Worker:
                     aborted: set[int] = self.local_state.check_conflicts()
                 checking_conflicts_time = timer()
                 logging.info(f'Checking conflicts in: {round((checking_conflicts_time - chain_done_time) * 1000, 4)}ms')
+
                 # Notify peers that we are ready to commit
                 logging.info(f'Notify peers...')
                 commit_start = timer()
 
                 await self.send_commit_to_peers(aborted, len(sequence))
+
                 # Wait for remote to be ready to commit
                 wait_remote_commits_task = [event.wait()
                                             for event in self.ready_to_commit_events.values()]
                 logging.info(f'Waiting on remote commits...')
                 await asyncio.gather(*wait_remote_commits_task)
+
                 # Gather the different abort messages (application logic, concurrency)
                 remote_aborted: set[int] = set(
                     itertools.chain.from_iterable(self.aborted_from_remote.values())
@@ -206,17 +217,21 @@ class Worker:
                     itertools.chain.from_iterable(self.logic_aborts_from_remote.values())
                 )
                 logic_aborts_everywhere = logic_aborts_everywhere.union(self.logic_aborts)
+
                 # Commit the local while taking into account the aborts from remote
                 logging.info(f'Sequence committed!')
                 await self.local_state.commit(remote_aborted.union(logic_aborts_everywhere))
                 aborts_for_next_epoch: set[int] = aborted.union(remote_aborted)
                 total_processed_functions: int = sum([self.processed_seq_size[worker_id]
                                                       for worker_id in self.processed_seq_size.keys()]) + len(sequence)
+
                 abort_rate: float = len(aborts_for_next_epoch) / total_processed_functions
+                self.abort_rates[self.sequencer.epoch_counter-1] = abort_rate
                 if abort_rate > FALLBACK_STRATEGY_PERCENTAGE:
                     await self.run_fallback_strategy(aborts_for_next_epoch)
                     aborts_for_next_epoch = set()
                     abort_rate = 0
+
                 await self.send_responses(aborts_for_next_epoch, logic_aborts_everywhere)
                 # Cleanup
                 await self.sequencer.increment_epoch(self.t_counters.values(), aborts_for_next_epoch)
@@ -243,6 +258,11 @@ class Worker:
                 logging.warning(f'Epoch: {self.sequencer.epoch_counter - 1} done in '
                                 f'{round((epoch_end - epoch_start)*1000, 4)}ms '
                                 f'processed 0 functions directly')
+
+            if self.abort_rates and (timer() - last_measured) > ABORT_RATE_OUTPUT_INTERVAL:
+                df = pd.DataFrame(self.abort_rates.items(), columns=['epoch_number', 'abort_rate'])
+                df.to_csv(f'/usr/local/universalis/bench/abort_rates_worker_{self.id}.csv')
+                last_measured = timer()
 
     def cleanup_after_epoch(self):
         for event in self.ready_to_commit_events.values():
