@@ -226,7 +226,6 @@ class Worker:
                                                       for worker_id in self.processed_seq_size.keys()]) + len(sequence)
 
                 abort_rate: float = len(aborts_for_next_epoch) / total_processed_functions
-                self.abort_rates[self.sequencer.epoch_counter-1] = abort_rate
                 if abort_rate > FALLBACK_STRATEGY_PERCENTAGE:
                     await self.run_fallback_strategy(aborts_for_next_epoch)
                     aborts_for_next_epoch = set()
@@ -238,12 +237,16 @@ class Worker:
                 # Re-sequence the aborted transactions due to concurrency
                 self.cleanup_after_epoch()
                 epoch_end = timer()
+
                 logging.info(f'Commit took: {round((epoch_end - commit_start) * 1000, 4)}ms')
                 logging.warning(f'Epoch: {self.sequencer.epoch_counter - 1} done in '
                                 f'{round((epoch_end - epoch_start)*1000, 4)}ms '
                                 f'processed: {len(run_function_tasks)} functions '
                                 f'initiated {len(chain_acks)} chains '
                                 f'abort rate: {abort_rate}')
+
+                self.abort_rates[self.sequencer.epoch_counter-1] = abort_rate
+
             elif self.remote_wants_to_commit():
                 epoch_start = timer()
                 await self.send_commit_to_peers(set(), 0)
@@ -261,7 +264,7 @@ class Worker:
 
             if self.abort_rates and (timer() - last_measured) > ABORT_RATE_OUTPUT_INTERVAL:
                 df = pd.DataFrame(self.abort_rates.items(), columns=['epoch_number', 'abort_rate'])
-                df.to_csv(f'/usr/local/universalis/bench/abort_rates_worker_{self.id}.csv')
+                df.to_csv(f'/usr/local/universalis/bench/abort_rates_worker_{self.id}.csv', index=False)
                 last_measured = timer()
 
     def cleanup_after_epoch(self):
