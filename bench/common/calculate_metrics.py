@@ -52,7 +52,6 @@ def main():
         elif row['latency'] <= max_latency_threshold:
             throughput[bucket_id] += 1
 
-
     throughputs = pd.DataFrame(data=throughput.items(), columns=['second', 'throughput'])
     throughputs_filename = benchmark_dir + '/throughputs.csv'
     throughputs.to_csv(throughputs_filename, index=False)
@@ -72,7 +71,6 @@ def main():
             print(f'{worker_file} could not be processed')
         finally:
             os.remove(worker_file)
-
 
     abort_rates = pd.concat(worker_abort_rates)\
         .rename_axis(['id', None])\
