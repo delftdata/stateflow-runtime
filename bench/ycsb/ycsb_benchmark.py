@@ -10,8 +10,8 @@ from universalis.common.stateflow_ingress import IngressTypes
 from universalis.universalis import Universalis
 
 from ycsb.functions import ycsb
-from ycsb.graph import ycsb_operator, g
-from ycsb.zipfian_generator import ZipfGenerator
+from ycsb.functions.graph import ycsb_operator, g
+from ycsb.util.zipfian_generator import ZipfGenerator
 
 
 class YcsbBenchmark:

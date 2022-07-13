@@ -2,13 +2,14 @@ from universalis.common.local_state_backends import LocalStateBackend
 from universalis.common.operator import Operator
 from universalis.common.stateflow_graph import StateflowGraph
 
-from ycsb.functions import ycsb
+from tpcc.functions import item
 
 ####################################################################################################################
 # DECLARE A STATEFLOW GRAPH ########################################################################################
 ####################################################################################################################
-g = StateflowGraph('ycsb_benchmark', operator_state_backend=LocalStateBackend.REDIS)
-ycsb_operator = Operator('ycsb', n_partitions=2)
+
+g = StateflowGraph('tpcc_benchmark', operator_state_backend=LocalStateBackend.REDIS)
+item_operator = Operator('items', n_partitions=2)
 ####################################################################################################################
-ycsb_operator.register_stateful_functions(ycsb.Insert, ycsb.Read, ycsb.Update, ycsb.Transfer)
-g.add_operator(ycsb_operator)
+item_operator.register_stateful_functions(item.InitialiseItems)
+g.add_operator(item_operator)
