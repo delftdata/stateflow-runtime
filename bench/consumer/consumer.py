@@ -1,15 +1,13 @@
 import asyncio
-import os
+import os.path
 import time
-import logging
 from asyncio import Event, Lock
 
 import pandas as pd
 import uvloop
 from aiokafka import AIOKafkaConsumer
+from universalis.common.logging import logging
 from universalis.common.serialization import msgpack_deserialization
-
-logging.basicConfig(level=logging.INFO)
 
 
 class BenchmarkConsumer:
@@ -34,7 +32,7 @@ class BenchmarkConsumer:
             await asyncio.sleep(1)
 
     async def consume_messages(self):
-        logging.info("Consuming...")
+        logging.warning("Consuming...")
         try:
             async for msg in self.consumer:
                 self.records.append((msg.key, msg.value, msg.timestamp))
@@ -45,7 +43,7 @@ class BenchmarkConsumer:
         except:
             await self.consumer.stop()
 
-    async def run(self):
+    async def main(self):
         self.consumer: AIOKafkaConsumer = AIOKafkaConsumer(
             'universalis-egress',
             key_deserializer=msgpack_deserialization,
@@ -63,5 +61,11 @@ class BenchmarkConsumer:
         await self.consumer.stop()
 
         responses = pd.DataFrame.from_records(self.records, columns=['request_id', 'response', 'timestamp'])
-        responses_filename = os.getcwd() + '/responses.csv'
+        responses_filename = os.path.join('./results', 'responses.csv')
         responses.to_csv(responses_filename, index=False)
+
+
+if __name__ == "__main__":
+    uvloop.install()
+    bc = BenchmarkConsumer()
+    asyncio.run(bc.main())

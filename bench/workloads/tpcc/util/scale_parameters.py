@@ -2,7 +2,7 @@
 # Adapted from MongoDB-labs py-tpcc package:
 # https://github.com/mongodb-labs/py-tpcc/blob/1fb6f851f5668eb9f253deb209069831c9303496/pytpcc/util/scaleparameters.py
 # -----------------------------------------------------------------------
-import tpcc.util.constants as constants
+import workloads.tpcc.util.constants as constants
 
 
 class ScaleParameters:
@@ -38,7 +38,7 @@ def make_default(num_warehouses: int) -> ScaleParameters:
     return ScaleParameters(
         constants.NUM_ITEMS, num_warehouses, constants.DISTRICTS_PER_WAREHOUSE, constants.CUSTOMERS_PER_DISTRICT,
         constants.INITIAL_NEW_ORDERS_PER_DISTRICT
-        )
+    )
 
 
 def make_with_scale_factor(num_warehouses: int, scale_factor: float) -> ScaleParameters:

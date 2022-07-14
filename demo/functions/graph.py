@@ -2,12 +2,12 @@ from universalis.common.local_state_backends import LocalStateBackend
 from universalis.common.operator import Operator
 from universalis.common.stateflow_graph import StateflowGraph
 
-from bench.shopping_cart.functions import order, stock, user
+from demo.functions import order, stock, user
 
 ####################################################################################################################
 # DECLARE A STATEFLOW GRAPH ########################################################################################
 ####################################################################################################################
-g = StateflowGraph('shopping_cart', operator_state_backend=LocalStateBackend.REDIS)
+g = StateflowGraph('shopping-cart', operator_state_backend=LocalStateBackend.REDIS)
 
 user_operator = Operator('user', n_partitions=6)
 stock_operator = Operator('stock', n_partitions=6)

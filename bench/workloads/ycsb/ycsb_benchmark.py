@@ -1,17 +1,16 @@
 import asyncio
-import os
+import os.path
 import random
-import logging
 from typing import Type
 
 import pandas as pd
-import uvloop
+from universalis.common.logging import logging
 from universalis.common.stateflow_ingress import IngressTypes
 from universalis.universalis import Universalis
 
-from ycsb.functions import ycsb
-from ycsb.functions.graph import ycsb_operator, g
-from ycsb.util.zipfian_generator import ZipfGenerator
+from workloads.ycsb.functions import ycsb
+from workloads.ycsb.functions.graph import ycsb_operator, g
+from workloads.ycsb.util.zipfian_generator import ZipfGenerator
 
 
 class YcsbBenchmark:
@@ -38,25 +37,27 @@ class YcsbBenchmark:
 
         await self.universalis.submit(g)
         await asyncio.sleep(2)
-        logging.info('Graph submitted')
+        logging.warning('Graph submitted')
 
     async def insert_records(self):
-        logging.info('Inserting')
+        logging.warning('Inserting')
         tasks = []
 
         for i in self.keys:
-            tasks.append(self.universalis.send_kafka_event(
-                operator=ycsb_operator,
-                key=i,
-                function=ycsb.Insert,
-                params=(i,))
+            tasks.append(
+                self.universalis.send_kafka_event(
+                    operator=ycsb_operator,
+                    key=i,
+                    function=ycsb.Insert,
+                    params=(i,)
+                )
             )
         await asyncio.gather(*tasks)
-        logging.info(f'All {self.N_ROWS} Records Inserted')
+        logging.warning(f'All {self.N_ROWS} Records Inserted')
         await asyncio.sleep(2)
 
     async def run_transaction_mix(self):
-        logging.info('Running Transaction Mix')
+        logging.warning('Running Transaction Mix')
         zipf_gen = ZipfGenerator(items=self.N_ROWS)
         tasks = []
 
@@ -75,8 +76,8 @@ class YcsbBenchmark:
 
         responses = await asyncio.gather(*tasks)
 
-        logging.info(self.operation_counts)
-        logging.info('Transaction Mix Complete')
+        logging.warning(self.operation_counts)
+        logging.warning('Transaction Mix Complete')
 
         await asyncio.sleep(1)
         return responses
@@ -89,12 +90,10 @@ class YcsbBenchmark:
 
         for request_id, timestamp in responses:
             timestamped_request_ids[request_id] = timestamp
-            filename = os.getcwd() + '/requests.csv'
 
-        pd.DataFrame(timestamped_request_ids.items(), columns=['request_id', 'timestamp']).to_csv(
-            filename,
-            index=False
-            )
+        requests_filename = os.path.join('./results', 'requests.csv')
+        requests = pd.DataFrame(timestamped_request_ids.items(), columns=['request_id', 'timestamp'])
+        requests.to_csv(requests_filename, index=False)
 
     async def run(self):
         await self.initialise()

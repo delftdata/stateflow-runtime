@@ -4,7 +4,8 @@
 # -----------------------------------------------------------------------
 
 import random
-from tpcc.util.nurand import make_for_load, NURandC
+
+from workloads.tpcc.util.nurand import make_for_load, NURandC
 
 SYLLABLES: list[str] = ["BAR", "OUGHT", "ABLE", "PRI", "PRES", "ESE", "ANTI", "CALLY", "ATION", "EING"]
 

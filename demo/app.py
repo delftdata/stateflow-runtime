@@ -3,14 +3,13 @@ import uuid
 
 from sanic import Sanic
 from sanic.response import json
-
+from universalis.common.local_state_backends import LocalStateBackend
 from universalis.common.operator import Operator
 from universalis.common.stateflow_graph import StateflowGraph
 from universalis.common.stateflow_ingress import IngressTypes
-
-from functions import order, stock, user
 from universalis.universalis import Universalis
-from universalis.common.local_state_backends import LocalStateBackend
+
+from demo.functions import order, stock, user
 
 app = Sanic(__name__)
 
@@ -22,8 +21,10 @@ UNIVERSALIS_PORT: int = int(os.environ['UNIVERSALIS_PORT'])
 async def init_universalis_client(running_app):
     # universalis = Universalis(UNIVERSALIS_HOST, UNIVERSALIS_PORT, IngressTypes.TCP,
     #                           tcp_ingress_host='ingress-load-balancer', tcp_ingress_port=4000)
-    running_app.ctx.universalis = Universalis(UNIVERSALIS_HOST, UNIVERSALIS_PORT, IngressTypes.KAFKA,
-                                              kafka_url='kafka1:9092')
+    running_app.ctx.universalis = Universalis(
+        UNIVERSALIS_HOST, UNIVERSALIS_PORT, IngressTypes.KAFKA,
+        kafka_url='kafka1:9092'
+        )
 
     running_app.ctx.user_operator = Operator('user', n_partitions=6)
     running_app.ctx.stock_operator = Operator('stock', n_partitions=6)
@@ -35,7 +36,7 @@ async def submit_dataflow_graph(_):
     ####################################################################################################################
     # DECLARE A STATEFLOW GRAPH ########################################################################################
     ####################################################################################################################
-    g = StateflowGraph('shopping_cart', operator_state_backend=LocalStateBackend.REDIS)
+    g = StateflowGraph('shopping-cart', operator_state_backend=LocalStateBackend.REDIS)
     ####################################################################################################################
     app.ctx.user_operator.register_stateful_functions(user.CreateUser, user.AddCredit, user.SubtractCredit)
     g.add_operator(app.ctx.user_operator)
@@ -63,10 +64,12 @@ async def create_user(_):
     #                                  key=user_key,
     #                                  function=user.CreateUser(),
     #                                  params=(user_key, user_name))
-    await app.ctx.universalis.send_kafka_event(operator=app.ctx.user_operator,
-                                               key=user_key,
-                                               function=user.CreateUser,
-                                               params=(user_key, user_name))
+    await app.ctx.universalis.send_kafka_event(
+        operator=app.ctx.user_operator,
+        key=user_key,
+        function=user.CreateUser,
+        params=(user_key, user_name)
+        )
     return json({'user_key': user_key})
 
 
@@ -83,14 +86,24 @@ async def create_item(_):
     item_name: str = f'item-{item_key}'
     price: int = 1
     # await universalis.send_tcp_event(stock_operator, item_key, stock.CreateItem(), (item_key, item_name, price))
-    await app.ctx.universalis.send_kafka_event(app.ctx.stock_operator, item_key, stock.CreateItem, (item_key, item_name, price))
+    await app.ctx.universalis.send_kafka_event(
+        app.ctx.stock_operator,
+        item_key,
+        stock.CreateItem,
+        (item_key, item_name, price)
+        )
     return json({'item_key': item_key})
 
 
 @app.post('/stock/add_stock/<item_key>/<amount>')
 async def add_stock(_, item_key: str, amount: int):
     # await universalis.send_tcp_event(stock_operator, item_key, stock.AddStock(), (item_key, int(amount)))
-    await app.ctx.universalis.send_kafka_event(app.ctx.stock_operator, item_key, stock.AddStock, (item_key, int(amount)))
+    await app.ctx.universalis.send_kafka_event(
+        app.ctx.stock_operator,
+        item_key,
+        stock.AddStock,
+        (item_key, int(amount))
+        )
     return json({'item_key': item_key})
 
 
@@ -98,7 +111,12 @@ async def add_stock(_, item_key: str, amount: int):
 async def create_order(_, user_key: str):
     order_key: str = str(uuid.uuid4())
     # await universalis.send_tcp_event(order_operator, order_key, order.CreateOrder(), (order_key, user_key))
-    await app.ctx.universalis.send_kafka_event(app.ctx.order_operator, order_key, order.CreateOrder, (order_key, user_key))
+    await app.ctx.universalis.send_kafka_event(
+        app.ctx.order_operator,
+        order_key,
+        order.CreateOrder,
+        (order_key, user_key)
+        )
     return json({'order_key': order_key})
 
 
@@ -106,7 +124,12 @@ async def create_order(_, user_key: str):
 async def add_item(_, order_key: str, item_key: str):
     quantity, cost = 1, 1
     # await universalis.send_tcp_event(order_operator, order_key, order.AddItem(), (order_key, item_key, quantity, cost))
-    await app.ctx.universalis.send_kafka_event(app.ctx.order_operator, order_key, order.AddItem, (order_key, item_key, quantity, cost))
+    await app.ctx.universalis.send_kafka_event(
+        app.ctx.order_operator,
+        order_key,
+        order.AddItem,
+        (order_key, item_key, quantity, cost)
+        )
     return json('Item added', status=200)
 
 

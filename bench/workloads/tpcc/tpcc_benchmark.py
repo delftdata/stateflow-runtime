@@ -4,9 +4,9 @@ import logging
 from universalis.common.stateflow_ingress import IngressTypes
 from universalis.universalis import Universalis
 
-from tpcc.functions.graph import g
-from tpcc.loader import Loader
-from tpcc.util.scale_parameters import make_default
+from workloads.tpcc.functions.graph import g
+from workloads.tpcc.loader import Loader
+from workloads.tpcc.util.scale_parameters import make_default
 
 
 class TpccBenchmark:
@@ -52,5 +52,3 @@ class TpccBenchmark:
         responses = await self.run_transaction_mix()
         await self.cleanup()
         self.generate_request_data(responses)
-
-

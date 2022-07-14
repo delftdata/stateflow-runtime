@@ -6,8 +6,8 @@ import uvloop
 from universalis.common.stateflow_ingress import IngressTypes
 from universalis.universalis import Universalis
 
-from bench.functions import order, stock, user, graph
-from bench.functions.graph import user_operator, stock_operator, order_operator
+from demo.functions import order, stock, user, graph
+from demo.functions.graph import user_operator, stock_operator, order_operator
 
 N_USERS = 5000
 USER_STARTING_CREDIT = 1000
@@ -97,10 +97,8 @@ async def main():
         timestamped_request_ids[request_id] = timestamp
     await universalis.close()
 
-    pd.DataFrame(timestamped_request_ids.items(), columns=['request_id', 'timestamp']).to_csv(
-        'rhea-50ms-req.csv',
-        index=False)
+    pd.DataFrame(timestamped_request_ids.items(), columns=['request_id', 'timestamp']).to_csv('client_requests.csv',
+                                                                                              index=False)
 
-if __name__ == "__main__":
-    uvloop.install()
-    asyncio.run(main())
+uvloop.install()
+asyncio.run(main())

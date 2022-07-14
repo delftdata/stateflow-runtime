@@ -1,3 +1,4 @@
+import logging
 import math
 import os
 import pathlib
@@ -8,13 +9,16 @@ import pandas as pd
 
 
 def calculate():
-    benchmark_dir = os.getcwd()
+    results_dir = './results'
 
-    requests_filename = benchmark_dir + '/requests.csv'
+    requests_filename = os.path.join(results_dir, 'requests.csv')
+    responses_filename = os.path.join(results_dir, 'responses.csv')
+
+    logging.warning('Calculating Metrics')
+
     requests = pd.read_csv(requests_filename)
     os.remove(requests_filename)
 
-    responses_filename = benchmark_dir + '/responses.csv'
     responses = pd.read_csv(responses_filename)
     os.remove(responses_filename)
 
@@ -35,7 +39,7 @@ def calculate():
     print(f'10%: {np.percentile(latency, 10)}ms')
 
     latencies = merged[['request_id', 'latency']]
-    latencies_filename = benchmark_dir + '/latencies.csv'
+    latencies_filename = results_dir + '/latencies.csv'
     latencies.to_csv(latencies_filename, index=False)
 
     start_time = -math.inf
@@ -53,14 +57,14 @@ def calculate():
             throughput[bucket_id] += 1
 
     throughputs = pd.DataFrame(data=throughput.items(), columns=['second', 'throughput'])
-    throughputs_filename = benchmark_dir + '/throughputs.csv'
+    throughputs_filename = os.path.join(results_dir, 'throughputs.csv')
     throughputs.to_csv(throughputs_filename, index=False)
     tp = throughputs['throughput']
 
     print(f'max throughput: {max(tp)}')
     print(f'average throughput: {np.average(tp)}')
 
-    worker_abort_rate_files = pathlib.Path(benchmark_dir)
+    worker_abort_rate_files = pathlib.Path(results_dir)
     worker_abort_rates = {}
 
     for worker_file in worker_abort_rate_files.glob('abort_rates_worker_[0-9]*.csv'):
@@ -73,11 +77,12 @@ def calculate():
         finally:
             os.remove(worker_file)
 
-    abort_rates = pd.concat(worker_abort_rates)\
-        .rename_axis(['id', None])\
-        .reset_index(level='id')\
+    abort_rates = pd.concat(worker_abort_rates) \
+        .rename_axis(['id', None]) \
+        .reset_index(level='id') \
         .rename(columns={'id': 'worker_id'})
-    abort_rate_filename = benchmark_dir + '/abort_rates.csv'
+
+    abort_rate_filename = os.path.join(results_dir, 'abort_rates.csv')
     abort_rates.to_csv(abort_rate_filename, index=False)
 
     average = np.average(abort_rates['abort_rate'])

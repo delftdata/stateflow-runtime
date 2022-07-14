@@ -1,17 +1,23 @@
-import logging
 import asyncio
-
+import logging
 from datetime import datetime
 
-from tpcc.functions.graph import item_operator, g
-from tpcc.functions import item
-from tpcc.util import rand, constants
-from tpcc.util.scale_parameters import ScaleParameters
 from universalis.universalis import Universalis
+
+from workloads.tpcc.functions import item
+from workloads.tpcc.functions.graph import item_operator
+from workloads.tpcc.util import rand, constants
+from workloads.tpcc.util.scale_parameters import ScaleParameters
 
 
 class Loader:
-    def __init__(self, scale_parameters: ScaleParameters, w_ids: list[int], universalis: Universalis, batch_size: int = 10000):
+    def __init__(
+            self,
+            scale_parameters: ScaleParameters,
+            w_ids: list[int],
+            universalis: Universalis,
+            batch_size: int = 10000
+            ):
         self.scale_parameters = scale_parameters
         self.w_ids: w_ids
         self.batch_size: int = batch_size
@@ -31,14 +37,16 @@ class Loader:
         tasks = []
         total_tuples = 0
 
-        for i_id in range(1, self.scale_parameters.items+1):
+        for i_id in range(1, self.scale_parameters.items + 1):
             original = (i_id in original_rows)
 
-            tasks.append(self.universalis.send_kafka_event(
-                item_operator,
-                i_id,
-                item.InitialiseItems,
-                (i_id, self.generate_item(i_id, original)))
+            tasks.append(
+                self.universalis.send_kafka_event(
+                    item_operator,
+                    i_id,
+                    item.InitialiseItems,
+                    (i_id, self.generate_item(i_id, original))
+                )
             )
             total_tuples += 1
 
@@ -100,7 +108,7 @@ class Loader:
             constants.DISCOUNT_DECIMALS,
             constants.MIN_DISCOUNT,
             constants.MAX_DISCOUNT
-            )
+        )
         c_balance: float = constants.INITIAL_BALANCE
         c_ytd_payment: float = constants.INITIAL_YTD_PAYMENT
         c_payment_cnt: int = constants.INITIAL_PAYMENT_CNT
@@ -114,7 +122,7 @@ class Loader:
         c_zip: str = self.generate_zip()
 
         return c_id, c_d_id, c_w_id, c_first, c_middle, c_last, c_street1, c_street2, c_city, c_state, c_zip, c_phone, \
-            c_since, c_credit, c_credit_lim, c_discount, c_balance, c_ytd_payment, c_payment_cnt, c_delivery_cnt, c_data
+               c_since, c_credit, c_credit_lim, c_discount, c_balance, c_ytd_payment, c_payment_cnt, c_delivery_cnt, c_data
 
     def generate_order_line(
             self,
@@ -124,7 +132,7 @@ class Loader:
             ol_number: int,
             max_items: int,
             new_order: bool
-            ) -> \
+    ) -> \
             tuple[int, int, int, int, int, int, datetime | None, int, float, str]:
         ol_i_id: int = rand.number(1, max_items)
         ol_supply_w_id: int = ol_w_id
@@ -155,7 +163,8 @@ class Loader:
         return ol_o_id, ol_d_id, ol_w_id, ol_number, ol_i_id, ol_supply_w_id, ol_delivery_d, ol_quantity, ol_amount, \
                ol_dist_info
 
-    def generate_stock(self, s_w_id: int, s_i_id: int, original: bool) -> tuple[int, int, int, list[str], int, int, int, str]:
+    def generate_stock(self, s_w_id: int, s_i_id: int, original: bool) -> tuple[
+        int, int, int, list[str], int, int, int, str]:
         s_quantity: int = rand.number(constants.MIN_QUANTITY, constants.MAX_QUANTITY)
         s_ytd: int = 0
         s_order_cnt: int = 0
@@ -171,7 +180,7 @@ class Loader:
 
         return s_i_id, s_w_id, s_quantity, s_dists, s_ytd, s_order_cnt, s_remote_cnt, s_data
 
-    def generate_address(self,) -> tuple[str, str, str, str, str, str]:
+    def generate_address(self, ) -> tuple[str, str, str, str, str, str]:
         """
             Returns a name and a street address
             Used by both generate_warehouse() and generate_district().

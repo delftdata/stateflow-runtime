@@ -2,7 +2,7 @@ from universalis.common.local_state_backends import LocalStateBackend
 from universalis.common.operator import Operator
 from universalis.common.stateflow_graph import StateflowGraph
 
-from ycsb.functions import ycsb
+from workloads.ycsb.functions import ycsb
 
 ####################################################################################################################
 # DECLARE A STATEFLOW GRAPH ########################################################################################
