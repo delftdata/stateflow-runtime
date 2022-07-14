@@ -1,8 +1,12 @@
+import asyncio
+
 from universalis.common.stateful_function import StatefulFunction
 
 
 class InitialiseItems(StatefulFunction):
     async def run(self, items: list[tuple]):
+        tasks = []
+
         for item in items:
             i_id, i_im_id, i_name, i_price, i_data = item
 
@@ -14,4 +18,7 @@ class InitialiseItems(StatefulFunction):
                 'i_data': i_data,
             }
 
-            await self.put(i_id, data)
+            tasks.append(self.put(i_id, data))
+
+        await asyncio.gather(*tasks)
+        return True

@@ -4,10 +4,10 @@ import random
 from typing import Type
 
 import pandas as pd
-from universalis.common.logging import logging
 from universalis.common.stateflow_ingress import IngressTypes
 from universalis.universalis import Universalis
 
+from common.logging import logging
 from workloads.ycsb.functions import ycsb
 from workloads.ycsb.functions.graph import ycsb_operator, g
 from workloads.ycsb.util.zipfian_generator import ZipfGenerator
@@ -37,10 +37,10 @@ class YcsbBenchmark:
 
         await self.universalis.submit(g)
         await asyncio.sleep(2)
-        logging.warning('Graph submitted')
+        logging.info('Graph submitted')
 
     async def insert_records(self):
-        logging.warning('Inserting')
+        logging.info('Inserting')
         tasks = []
 
         for i in self.keys:
@@ -53,11 +53,11 @@ class YcsbBenchmark:
                 )
             )
         await asyncio.gather(*tasks)
-        logging.warning(f'All {self.N_ROWS} Records Inserted')
+        logging.info(f'All {self.N_ROWS} Records Inserted')
         await asyncio.sleep(2)
 
     async def run_transaction_mix(self):
-        logging.warning('Running Transaction Mix')
+        logging.info('Running Transaction Mix')
         zipf_gen = ZipfGenerator(items=self.N_ROWS)
         tasks = []
 
@@ -76,8 +76,8 @@ class YcsbBenchmark:
 
         responses = await asyncio.gather(*tasks)
 
-        logging.warning(self.operation_counts)
-        logging.warning('Transaction Mix Complete')
+        logging.info(self.operation_counts)
+        logging.info('Transaction Mix Complete')
 
         await asyncio.sleep(1)
         return responses

@@ -15,22 +15,22 @@ class ScaleParameters:
         self.starting_warehouse = 1
 
         assert 1 <= districts_per_warehouse <= constants.DISTRICTS_PER_WAREHOUSE
-        self.districtsPerWarehouse = districts_per_warehouse
+        self.districts_per_warehouse = districts_per_warehouse
 
         assert 1 <= customers_per_district <= constants.CUSTOMERS_PER_DISTRICT
-        self.customersPerDistrict = customers_per_district
+        self.customers_per_district = customers_per_district
 
         assert 0 <= new_orders_per_district <= constants.CUSTOMERS_PER_DISTRICT
         assert new_orders_per_district <= constants.INITIAL_NEW_ORDERS_PER_DISTRICT
-        self.newOrdersPerDistrict = new_orders_per_district
+        self.new_orders_per_district = new_orders_per_district
         self.ending_warehouse = (self.warehouses + self.starting_warehouse - 1)
 
     def __str__(self):
         out = "%d items\n" % self.items
         out += "%d warehouses\n" % self.warehouses
-        out += "%d districts/warehouse\n" % self.districtsPerWarehouse
-        out += "%d customers/district\n" % self.customersPerDistrict
-        out += "%d initial new orders/district" % self.newOrdersPerDistrict
+        out += "%d districts/warehouse\n" % self.districts_per_warehouse
+        out += "%d customers/district\n" % self.customers_per_district
+        out += "%d initial new orders/district" % self.new_orders_per_district
         return out
 
 

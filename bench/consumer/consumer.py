@@ -6,8 +6,9 @@ from asyncio import Event, Lock
 import pandas as pd
 import uvloop
 from aiokafka import AIOKafkaConsumer
-from universalis.common.logging import logging
 from universalis.common.serialization import msgpack_deserialization
+
+from common.logging import logging
 
 
 class BenchmarkConsumer:
@@ -36,6 +37,7 @@ class BenchmarkConsumer:
         try:
             async for msg in self.consumer:
                 self.records.append((msg.key, msg.value, msg.timestamp))
+                logging.info(f'Records: {len(self.records)}')
                 async with self.last_message_time_lock:
                     self.last_message_time = time.time()
 

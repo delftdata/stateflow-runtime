@@ -19,6 +19,6 @@ async def main():
 
 if __name__ == "__main__":
     uvloop.install()
-    bench = ycsb
+    bench = tpcc
     consumer = BenchmarkConsumer()
     asyncio.run(main())

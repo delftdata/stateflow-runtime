@@ -1,4 +1,3 @@
-import logging
 import math
 import os
 import pathlib
@@ -7,6 +6,8 @@ import re
 import numpy as np
 import pandas as pd
 
+from common.logging import logging
+
 
 def calculate():
     results_dir = './results'
@@ -14,7 +15,7 @@ def calculate():
     requests_filename = os.path.join(results_dir, 'requests.csv')
     responses_filename = os.path.join(results_dir, 'responses.csv')
 
-    logging.warning('Calculating Metrics')
+    logging.info('Calculating Metrics')
 
     requests = pd.read_csv(requests_filename)
     os.remove(requests_filename)
@@ -26,17 +27,17 @@ def calculate():
     merged['latency'] = merged['timestamp_y'] - merged['timestamp_x']
     latency = merged['latency']
 
-    print(f'min latency: {min(latency)}ms')
-    print(f'max latency: {max(latency)}ms')
-    print(f'average latency: {np.average(latency)}ms')
-    print(f'99%: {np.percentile(latency, 99)}ms')
-    print(f'95%: {np.percentile(latency, 95)}ms')
-    print(f'90%: {np.percentile(latency, 90)}ms')
-    print(f'75%: {np.percentile(latency, 75)}ms')
-    print(f'60%: {np.percentile(latency, 60)}ms')
-    print(f'50%: {np.percentile(latency, 50)}ms')
-    print(f'25%: {np.percentile(latency, 25)}ms')
-    print(f'10%: {np.percentile(latency, 10)}ms')
+    logging.info(f'min latency: {min(latency)}ms')
+    logging.info(f'max latency: {max(latency)}ms')
+    logging.info(f'average latency: {np.average(latency)}ms')
+    logging.info(f'99%: {np.percentile(latency, 99)}ms')
+    logging.info(f'95%: {np.percentile(latency, 95)}ms')
+    logging.info(f'90%: {np.percentile(latency, 90)}ms')
+    logging.info(f'75%: {np.percentile(latency, 75)}ms')
+    logging.info(f'60%: {np.percentile(latency, 60)}ms')
+    logging.info(f'50%: {np.percentile(latency, 50)}ms')
+    logging.info(f'25%: {np.percentile(latency, 25)}ms')
+    logging.info(f'10%: {np.percentile(latency, 10)}ms')
 
     latencies = merged[['request_id', 'latency']]
     latencies_filename = results_dir + '/latencies.csv'
@@ -61,8 +62,8 @@ def calculate():
     throughputs.to_csv(throughputs_filename, index=False)
     tp = throughputs['throughput']
 
-    print(f'max throughput: {max(tp)}')
-    print(f'average throughput: {np.average(tp)}')
+    logging.info(f'max throughput: {max(tp)}')
+    logging.info(f'average throughput: {np.average(tp)}')
 
     worker_abort_rate_files = pathlib.Path(results_dir)
     worker_abort_rates = {}
@@ -73,7 +74,7 @@ def calculate():
             worker_abort_rates[worker_id] = pd.read_csv(worker_file)
 
         except AttributeError:
-            print(f'{worker_file} could not be processed')
+            logging.info(f'{worker_file} could not be processed')
         finally:
             os.remove(worker_file)
 
@@ -86,4 +87,4 @@ def calculate():
     abort_rates.to_csv(abort_rate_filename, index=False)
 
     average = np.average(abort_rates['abort_rate'])
-    print(f'average abort rate: {np.average(average)}')
+    logging.info(f'average abort rate: {np.average(average)}')

@@ -3,6 +3,17 @@
 # https://github.com/mongodb-labs/py-tpcc/blob/1fb6f851f5668eb9f253deb209069831c9303496/pytpcc/constants.py
 # -----------------------------------------------------------------------
 
+import workloads.tpcc.functions.customer as customer
+import workloads.tpcc.functions.district as district
+import workloads.tpcc.functions.history as history
+import workloads.tpcc.functions.item as item
+import workloads.tpcc.functions.new_order as new_order
+import workloads.tpcc.functions.order as order
+import workloads.tpcc.functions.order_line as order_line
+import workloads.tpcc.functions.stock as stock
+import workloads.tpcc.functions.warehouse as warehouse
+from workloads.tpcc.functions.graph import item_operator
+
 MONEY_DECIMALS: int = 2
 
 #  Item constants
@@ -108,6 +119,26 @@ TABLENAME_ORDERS = "ORDERS"
 TABLENAME_NEW_ORDER = "NEW_ORDER"
 TABLENAME_ORDER_LINE = "ORDER_LINE"
 TABLENAME_HISTORY = "HISTORY"
+
+FUNCTIONS_ITEM = item
+FUNCTIONS_WAREHOUSE = warehouse
+FUNCTIONS_DISTRICT = district
+FUNCTIONS_CUSTOMER = customer
+FUNCTIONS_STOCK = stock
+FUNCTIONS_ORDERS = order
+FUNCTIONS_NEW_ORDER = new_order
+FUNCTIONS_ORDER_LINE = order_line
+FUNCTIONS_HISTORY = history
+
+OPERATOR_ITEM = item_operator
+OPERATOR_WAREHOUSE = warehouse
+OPERATOR_DISTRICT = district
+OPERATOR_CUSTOMER = customer
+OPERATOR_STOCK = stock
+OPERATOR_ORDERS = order
+OPERATOR_NEW_ORDER = new_order
+OPERATOR_ORDER_LINE = order_line
+OPERATOR_HISTORY = history
 
 ALL_TABLES = [
     TABLENAME_ITEM,
