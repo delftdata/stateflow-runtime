@@ -37,7 +37,7 @@ class BenchmarkConsumer:
         try:
             async for msg in self.consumer:
                 self.records.append((msg.key, msg.value, msg.timestamp))
-                logging.info(f'Records: {len(self.records)}')
+
                 async with self.last_message_time_lock:
                     self.last_message_time = time.time()
 

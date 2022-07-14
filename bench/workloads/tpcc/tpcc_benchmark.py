@@ -6,7 +6,7 @@ from universalis.universalis import Universalis
 from common.logging import logging
 from workloads.tpcc.functions.graph import g
 from workloads.tpcc.loader import Loader
-from workloads.tpcc.util.scale_parameters import make_default
+from workloads.tpcc.util.scale_parameters import make_with_scale_factor
 
 
 class TpccBenchmark:
@@ -18,7 +18,7 @@ class TpccBenchmark:
     loader: Loader
 
     def __init__(self):
-        self.scale_parameters = make_default(1)
+        self.scale_parameters = make_with_scale_factor(1, 100)
 
     async def initialise(self):
         self.universalis = Universalis(

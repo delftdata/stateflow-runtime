@@ -26,8 +26,8 @@ class Loader:
     async def execute(self):
         await self.load_items()
 
-        for w_id in self.w_ids:
-            self.load_warehouse(w_id)
+        # for w_id in self.w_ids:
+        #     await self.load_warehouse(w_id)
 
     async def load_items(self):
         # Select 10% of the rows to be marked "original"
