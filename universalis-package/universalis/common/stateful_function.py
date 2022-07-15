@@ -46,7 +46,8 @@ class StatefulFunction(Function):
                  dns: dict[str, dict[str, tuple[str, int]]],
                  t_id: int,
                  request_id: str,
-                 operator_functions: dict[str, str]):
+                 operator_functions: dict[str, str],
+                 fallback_mode: bool):
         super().__init__()
         self.operator_name = operator_name
         self.state: State = operator_state
@@ -57,18 +58,16 @@ class StatefulFunction(Function):
         self.request_id: str = request_id
         self.async_remote_calls: list[tuple[str, str, object, tuple]] = []
         self.operator_functions: dict[str, str] = operator_functions
-        self.fallback_enabled: bool = False
+        self.fallback_enabled: bool = fallback_mode
 
     async def __call__(self, *args, **kwargs):
-        if 'fallback_enabled' in kwargs:
-            self.fallback_enabled = kwargs['fallback_enabled']
         try:
             res = await self.run(*args)
-            if 'ack_share' in kwargs:
+            if 'ack_share' in kwargs and not self.fallback_enabled:
                 # middle of the chain
                 n_remote_calls = await self.send_async_calls(ack_share=kwargs['ack_share'])
                 return res, n_remote_calls
-            elif len(self.async_remote_calls) > 0:
+            elif len(self.async_remote_calls) > 0 and not self.fallback_enabled:
                 # start of the chain
                 n_remote_calls = await self.send_async_calls()
                 return res, n_remote_calls

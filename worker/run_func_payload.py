@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 @dataclass
 class RunFuncPayload:
-    request_id: str
+    request_id: bytes
     key: object
     timestamp: int
     operator_name: str
@@ -11,6 +11,7 @@ class RunFuncPayload:
     function_name: str
     params: tuple
     response_socket: object
+    ack_payload: tuple[str, int, str]  # host, port, stake
 
 
 @dataclass

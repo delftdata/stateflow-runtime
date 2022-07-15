@@ -2,7 +2,7 @@ import logging
 from typing import Awaitable, Type
 
 from .function_definition import FunctionDefinition
-from .serialization import Serializer
+from .serialization import Serializer, msgpack_deserialization
 from .base_operator import BaseOperator
 from .function import Function
 from .stateful_function import StatefulFunction
@@ -28,28 +28,27 @@ class Operator(BaseOperator):
 
     async def run_function(self,
                            t_id: int,
-                           request_id,
+                           request_id: bytes,
                            timestamp: int,
                            function_name: str,
                            ack_payload: tuple[str, int, str],
-                           wait_completion_events,
+                           fallback_mode: bool,
                            *params) -> Awaitable:
-        logging.info(f'TID: {t_id}  function: {function_name} ')
+        logging.info(f'RQ_ID: {msgpack_deserialization(request_id)} TID: {t_id} '
+                     f'function: {function_name} fallback mode: {fallback_mode}')
         function = self.functions[function_name].materialize_function(self.state,
                                                                       self.networking,
                                                                       timestamp,
                                                                       self.dns,
                                                                       t_id,
                                                                       request_id,
-                                                                      self.operator_functions)
+                                                                      self.operator_functions,
+                                                                      fallback_mode)
         if ack_payload is not None:
             # part of a chain (not root)
             ack_host, ack_id, fraction_str = ack_payload
-            if wait_completion_events is not None:
-                resp = await function(*params, ack_share=fraction_str, fallback_enabled=True)
-            else:
-                resp = await function(*params, ack_share=fraction_str)
-            if not isinstance(resp, Exception):
+            resp = await function(*params, ack_share=fraction_str)
+            if not isinstance(resp, Exception) and not fallback_mode:
                 resp, n_remote_calls = resp
                 if n_remote_calls == 0:
                     # final link of the chain (send ack share)
@@ -62,10 +61,7 @@ class Operator(BaseOperator):
                                                                            "__MSG__": (ack_id, '-1')},
                                                    Serializer.MSGPACK)
         else:
-            if wait_completion_events is not None:
-                resp = await function(*params, fallback_enabled=True)
-            else:
-                resp = await function(*params)
+            resp = await function(*params)
             if not isinstance(resp, Exception):
                 resp, _ = resp
         del function

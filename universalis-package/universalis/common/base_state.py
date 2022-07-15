@@ -17,6 +17,8 @@ class BaseOperatorState(ABC):
     reads: dict[str, dict[Any, int]]  # operator_name: {key: t_id}
     # the transactions that are aborted
     aborted_transactions: set[int]
+    # Calving snapshot things
+    to_rollback: dict
 
     def __init__(self, operator_names: set[str]):
         self.operator_names = operator_names
@@ -39,6 +41,10 @@ class BaseOperatorState(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def rollback_immediate(self, key, operator_name: str):
+        raise NotImplementedError
+
+    @abstractmethod
     async def get(self, key, t_id: int, operator_name: str):
         raise NotImplementedError
 
@@ -51,17 +57,37 @@ class BaseOperatorState(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def commit(self, aborted_from_remote: set[int]):
+    async def commit(self, aborted_from_remote: set[int]) -> set[int]:
         raise NotImplementedError
 
-    def get_dependency_graph(self, aborted_t_ids: set[int]) -> dict[int, dict[str, set[Any]]]:
+    @staticmethod
+    def t_get_key_set_dependencies(t_id: int,
+                                   operator_name: str,
+                                   key_set: set[Any],
+                                   t_dependencies: dict[int, dict[str, set[Any]]]):
+        if t_id in t_dependencies:
+            if operator_name in t_dependencies[t_id]:
+                t_dependencies[t_id][operator_name].update(t_dependencies[t_id][operator_name].union(key_set))
+            else:
+                t_dependencies[t_id][operator_name] = key_set
+        else:
+            t_dependencies[t_id] = {operator_name: key_set}
+        return t_dependencies
+
+    def get_dependency_graph(self, aborted_t_ids: set[int],
+                             logic_aborts_everywhere: set[int]) -> dict[int, dict[str, set[Any]]]:
         t_dependencies: dict[int, dict[str, set[Any]]] = {}   # tid: {operator_name: {set of keys}}
+        # Get write set dependencies
         for operator_name, write_set in self.write_sets.items():
             for t_id, ws in write_set.items():
-                if t_id in aborted_t_ids:
+                if t_id in aborted_t_ids and t_id not in logic_aborts_everywhere:
                     ws_keys: set[Any] = set(ws.keys())
-                    rs_keys: set[Any] = self.read_sets[operator_name].get(t_id, set())
-                    t_dependencies[t_id] = {operator_name: ws_keys.union(rs_keys)}
+                    t_dependencies = self.t_get_key_set_dependencies(t_id, operator_name, ws_keys, t_dependencies)
+        # Get read set dependencies
+        for operator_name, read_set in self.read_sets.items():
+            for t_id, rs in read_set.items():
+                if t_id in aborted_t_ids and t_id not in logic_aborts_everywhere:
+                    t_dependencies = self.t_get_key_set_dependencies(t_id, operator_name, rs, t_dependencies)
         t_dependencies = {key: t_dependencies[key] for key in sorted(t_dependencies.keys())}  # sort by t_id
         return t_dependencies
 
@@ -99,3 +125,4 @@ class BaseOperatorState(ABC):
         self.reads = {operator_name: {} for operator_name in self.operator_names}
         self.read_sets = {operator_name: {} for operator_name in self.operator_names}
         self.aborted_transactions = set()
+        self.to_rollback = {operator_name: {} for operator_name in self.operator_names}
