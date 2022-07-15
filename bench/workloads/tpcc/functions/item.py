@@ -1,8 +1,8 @@
 from universalis.common.stateful_function import StatefulFunction
 
 
-class InitialiseItem(StatefulFunction):
-    async def run(self, item: tuple):
+class Insert(StatefulFunction):
+    async def run(self, key: str, item: tuple):
         i_id, i_im_id, i_name, i_price, i_data = item
 
         data = {
@@ -13,5 +13,5 @@ class InitialiseItem(StatefulFunction):
             'i_data': i_data,
         }
 
-        await self.put(i_id, data)
+        await self.put(key, data)
         return data

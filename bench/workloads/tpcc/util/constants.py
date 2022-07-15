@@ -3,16 +3,7 @@
 # https://github.com/mongodb-labs/py-tpcc/blob/1fb6f851f5668eb9f253deb209069831c9303496/pytpcc/constants.py
 # -----------------------------------------------------------------------
 
-import workloads.tpcc.functions.customer as customer
-import workloads.tpcc.functions.district as district
-import workloads.tpcc.functions.history as history
-import workloads.tpcc.functions.item as item
-import workloads.tpcc.functions.new_order as new_order
-import workloads.tpcc.functions.order as order
-import workloads.tpcc.functions.order_line as order_line
-import workloads.tpcc.functions.stock as stock
-import workloads.tpcc.functions.warehouse as warehouse
-from workloads.tpcc.functions.graph import item_operator
+import workloads.tpcc.functions.graph as graph
 
 MONEY_DECIMALS: int = 2
 
@@ -120,25 +111,25 @@ TABLENAME_NEW_ORDER = "NEW_ORDER"
 TABLENAME_ORDER_LINE = "ORDER_LINE"
 TABLENAME_HISTORY = "HISTORY"
 
-FUNCTIONS_ITEM = item
-FUNCTIONS_WAREHOUSE = warehouse
-FUNCTIONS_DISTRICT = district
-FUNCTIONS_CUSTOMER = customer
-FUNCTIONS_STOCK = stock
-FUNCTIONS_ORDERS = order
-FUNCTIONS_NEW_ORDER = new_order
-FUNCTIONS_ORDER_LINE = order_line
-FUNCTIONS_HISTORY = history
+FUNCTIONS_CUSTOMER = graph.customer
+FUNCTIONS_DISTRICT = graph.district
+FUNCTIONS_HISTORY = graph.history
+FUNCTIONS_ITEM = graph.item
+FUNCTIONS_NEW_ORDER = graph.new_order
+FUNCTIONS_ORDER = graph.order
+FUNCTIONS_ORDER_LINE = graph.order_line
+FUNCTIONS_STOCK = graph.stock
+FUNCTIONS_WAREHOUSE = graph.warehouse
 
-OPERATOR_ITEM = item_operator
-OPERATOR_WAREHOUSE = warehouse
-OPERATOR_DISTRICT = district
-OPERATOR_CUSTOMER = customer
-OPERATOR_STOCK = stock
-OPERATOR_ORDERS = order
-OPERATOR_NEW_ORDER = new_order
-OPERATOR_ORDER_LINE = order_line
-OPERATOR_HISTORY = history
+OPERATOR_CUSTOMER = graph.customer_operator
+OPERATOR_DISTRICT = graph.district_operator
+OPERATOR_HISTORY = graph.history_operator
+OPERATOR_ITEM = graph.item_operator
+OPERATOR_NEW_ORDER = graph.new_order_operator
+OPERATOR_ORDER = graph.order_operator
+OPERATOR_ORDER_LINE = graph.order_line_operator
+OPERATOR_STOCK = graph.stock_operator
+OPERATOR_WAREHOUSE = graph.warehouse_operator
 
 ALL_TABLES = [
     TABLENAME_ITEM,

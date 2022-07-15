@@ -115,7 +115,7 @@ def make_last_name(num: int) -> str:
     global SYLLABLES
     assert 0 <= num <= 999
 
-    indices = [num / 100, (num / 10) % 10, num % 10]
+    indices = [round(num / 100), round((num / 10)) % 10, num % 10]
     return "".join(map(lambda x: SYLLABLES[x], indices))
 
 

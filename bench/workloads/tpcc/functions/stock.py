@@ -1,8 +1,8 @@
 from universalis.common.stateful_function import StatefulFunction
 
 
-class InitialiseStock(StatefulFunction):
-    async def run(self, stock: tuple):
+class Insert(StatefulFunction):
+    async def run(self, key: str, stock: tuple):
         s_i_id, s_w_id, s_quantity, s_dists, s_ytd, s_order_cnt, s_remote_cnt, s_data = stock
 
         data = {
@@ -18,5 +18,5 @@ class InitialiseStock(StatefulFunction):
         for i, s_dist in s_dists:
             data[f's_dist_{i}'] = s_dist
 
-        await self.put(s_i_id, data)
+        await self.put(key, data)
         return data

@@ -1,8 +1,8 @@
 from universalis.common.stateful_function import StatefulFunction
 
 
-class InitialiseWarehouse(StatefulFunction):
-    async def run(self, warehouse: tuple):
+class Insert(StatefulFunction):
+    async def run(self, key: str, warehouse: tuple):
         w_id, w_name, w_street_1, w_street_2, w_city, w_state, w_zip, w_tax, w_ytd = warehouse
 
         data = {
@@ -17,5 +17,5 @@ class InitialiseWarehouse(StatefulFunction):
             'w_ytd': w_ytd,
         }
 
-        await self.put(w_id, data)
+        await self.put(key, data)
         return data
