@@ -2,7 +2,9 @@ from universalis.common.stateful_function import StatefulFunction
 
 
 class InitialiseOrders(StatefulFunction):
-    async def run(self):
+    async def run(self, order: tuple):
+        o_id, o_c_id, o_d_id, o_w_id, o_entry_d, o_carrier_id, o_ol_cnt, o_all_local = order
+
         data = {
             'o_id': o_id,
             'o_c_id': o_c_id,
@@ -13,3 +15,6 @@ class InitialiseOrders(StatefulFunction):
             'o_ol_cnt': o_ol_cnt,
             'o_all_local': o_all_local
         }
+
+        await self.put(o_id, data)
+        return data

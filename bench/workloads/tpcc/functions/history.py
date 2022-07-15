@@ -2,7 +2,9 @@ from universalis.common.stateful_function import StatefulFunction
 
 
 class InitialiseHistory(StatefulFunction):
-    async def run(self):
+    async def run(self, history: tuple):
+        h_c_id, h_c_d_id, h_c_w_id, h_d_id, h_w_id, h_date, h_amount, h_data = history
+
         data = {
             'h_c_id': h_c_id,
             'h_c_d_id': h_c_d_id,
@@ -13,3 +15,6 @@ class InitialiseHistory(StatefulFunction):
             'h_amount': h_amount,
             'h_data': h_data,
         }
+
+        await self.put((h_c_id, h_c_d_id, h_c_w_id), data)
+        return data

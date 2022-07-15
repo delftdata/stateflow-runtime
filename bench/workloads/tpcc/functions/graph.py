@@ -10,6 +10,13 @@ from workloads.tpcc.functions import item
 
 g = StateflowGraph('tpcc_benchmark', operator_state_backend=LocalStateBackend.REDIS)
 item_operator = Operator('items', n_partitions=2)
+item_operator = Operator('items', n_partitions=2)
+item_operator = Operator('items', n_partitions=2)
+item_operator = Operator('items', n_partitions=2)
+item_operator = Operator('items', n_partitions=2)
+item_operator = Operator('items', n_partitions=2)
+item_operator = Operator('items', n_partitions=2)
+
 ####################################################################################################################
-item_operator.register_stateful_functions(item.InitialiseItems)
+item_operator.register_stateful_functions(item.InitialiseItem)
 g.add_operator(item_operator)

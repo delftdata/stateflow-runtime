@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import math
-import random
 from datetime import datetime
 
 from universalis.universalis import Universalis
@@ -26,8 +25,8 @@ class Loader:
     async def execute(self):
         await self.load_items()
 
-        # for w_id in self.w_ids:
-        #     await self.load_warehouse(w_id)
+        for w_id in self.w_ids:
+            await self.load_warehouse(w_id)
 
     async def load_items(self):
         # Select 10% of the rows to be marked "original"
@@ -48,7 +47,7 @@ class Loader:
                 self.universalis.send_kafka_event(
                     constants.OPERATOR_ITEM,
                     i_id,
-                    constants.FUNCTIONS_ITEM.InitialiseItems,
+                    constants.FUNCTIONS_ITEM.InitialiseItem,
                     (self.generate_item(i_id, original),)
                 )
             )
@@ -76,102 +75,102 @@ class Loader:
             (w_id, self.generate_warehouse(w_id))
         )
 
-        ## DISTRICT
-        d_tuples = []
-        for d_id in range(1, self.scale_parameters.districts_per_warehouse + 1):
-            d_next_o_id = self.scale_parameters.customers_per_district + 1
-            d_tuples = [self.generate_district(w_id, d_id, d_next_o_id)]
-
-            c_tuples = []
-            h_tuples = []
-
-            ## Select 10% of the customers to have bad credit
-            selected_rows = rand.select_unique_ids(
-                self.scale_parameters.customers_per_district / 10,
-                1,
-                self.scale_parameters.customers_per_district
-            )
-
-            ## TPC-C 4.3.3.1. says that o_c_id should be a permutation of [1, 3000]. But since it
-            ## is a c_id field, it seems to make sense to have it be a permutation of the
-            ## customers. For the "real" thing this will be equivalent
-            c_id_permutation = []
-
-            for c_id in range(1, self.scale_parameters.customers_per_district + 1):
-                bad_credit = c_id in selected_rows
-                c_tuples.append(self.generate_customer(w_id, d_id, c_id, bad_credit))
-                h_tuples.append(self.generate_history(w_id, d_id, c_id))
-                c_id_permutation.append(c_id)
-
-            assert c_id_permutation[0] == 1
-            assert c_id_permutation[self.scale_parameters.customers_per_district - 1] == \
-                   self.scale_parameters.customers_per_district
-
-            random.shuffle(c_id_permutation)
-
-            o_tuples = []
-            ol_tuples = []
-            no_tuples = []
-
-            for o_id in range(1, self.scale_parameters.customers_per_district + 1):
-                o_ol_cnt = rand.number(constants.MIN_OL_CNT, constants.MAX_OL_CNT)
-
-                ## The last new_orders_per_district are new orders
-                new_order = (
-                        (self.scale_parameters.customers_per_district - self.scale_parameters.new_orders_per_district)
-                        < o_id
-                )
-                o_tuples.append(self.generate_order(w_id, d_id, o_id, c_id_permutation[o_id - 1], o_ol_cnt, new_order))
-
-                ## Generate each OrderLine for the order
-                for ol_number in range(0, o_ol_cnt):
-                    ol_tuples.append(
-                        self.generate_order_line(w_id, d_id, o_id, ol_number, self.scale_parameters.items, new_order)
-                    )
-
-                ## This is a new order: make one for it
-                if new_order:
-                    no_tuples.append([o_id, d_id, w_id])
-
-            # await self.universalis.send_kafka_event(
-            #     constants.OPERATOR_DISTRICT,
-            #     w_id,
-            #     constants.OPERATOR_DISTRICT.InitialiseDistrict,
-            #     (w_id, self.generate_warehouse(w_id))
-            # )
-
-            self.handle.loadTuples(constants.TABLENAME_DISTRICT, d_tuples)
-            self.handle.loadTuples(constants.TABLENAME_CUSTOMER, c_tuples)
-            self.handle.loadTuples(constants.TABLENAME_ORDERS, o_tuples)
-            self.handle.loadTuples(constants.TABLENAME_ORDER_LINE, ol_tuples)
-            self.handle.loadTuples(constants.TABLENAME_NEW_ORDER, no_tuples)
-            self.handle.loadTuples(constants.TABLENAME_HISTORY, h_tuples)
-            self.handle.loadFinishDistrict(w_id, d_id)
-
-        ## Select 10% of the stock to be marked "original"
-        s_tuples = []
-        selected_rows = rand.select_unique_ids(self.scale_parameters.items / 10, 1, self.scale_parameters.items)
-        total_tuples = 0
-
-        for i_id in range(1, self.scale_parameters.items + 1):
-            original = (i_id in selected_rows)
-            s_tuples.append(self.generate_stock(w_id, i_id, original))
-
-            if len(s_tuples) >= self.batch_size:
-                logging.info(
-                    "LOAD - %s [W_ID=%d]: %5d / %d" % (
-                        constants.TABLENAME_STOCK, w_id, total_tuples, self.scale_parameters.items)
-                )
-                self.handle.loadTuples(constants.TABLENAME_STOCK, s_tuples)
-                s_tuples = []
-            total_tuples += 1
-
-        if len(s_tuples) > 0:
-            logging.info(
-                "LOAD - %s [W_ID=%d]: %5d / %d" % (
-                    constants.TABLENAME_STOCK, w_id, total_tuples, self.scale_parameters.items)
-            )
-            self.handle.loadTuples(constants.TABLENAME_STOCK, s_tuples)
+        # ## DISTRICT
+        # d_tuples = []
+        # for d_id in range(1, self.scale_parameters.districts_per_warehouse + 1):
+        #     d_next_o_id = self.scale_parameters.customers_per_district + 1
+        #     d_tuples = [self.generate_district(w_id, d_id, d_next_o_id)]
+        #
+        #     c_tuples = []
+        #     h_tuples = []
+        #
+        #     ## Select 10% of the customers to have bad credit
+        #     selected_rows = rand.select_unique_ids(
+        #         self.scale_parameters.customers_per_district / 10,
+        #         1,
+        #         self.scale_parameters.customers_per_district
+        #     )
+        #
+        #     ## TPC-C 4.3.3.1. says that o_c_id should be a permutation of [1, 3000]. But since it
+        #     ## is a c_id field, it seems to make sense to have it be a permutation of the
+        #     ## customers. For the "real" thing this will be equivalent
+        #     c_id_permutation = []
+        #
+        #     for c_id in range(1, self.scale_parameters.customers_per_district + 1):
+        #         bad_credit = c_id in selected_rows
+        #         c_tuples.append(self.generate_customer(w_id, d_id, c_id, bad_credit))
+        #         h_tuples.append(self.generate_history(w_id, d_id, c_id))
+        #         c_id_permutation.append(c_id)
+        #
+        #     assert c_id_permutation[0] == 1
+        #     assert c_id_permutation[self.scale_parameters.customers_per_district - 1] == \
+        #            self.scale_parameters.customers_per_district
+        #
+        #     random.shuffle(c_id_permutation)
+        #
+        #     o_tuples = []
+        #     ol_tuples = []
+        #     no_tuples = []
+        #
+        #     for o_id in range(1, self.scale_parameters.customers_per_district + 1):
+        #         o_ol_cnt = rand.number(constants.MIN_OL_CNT, constants.MAX_OL_CNT)
+        #
+        #         ## The last new_orders_per_district are new orders
+        #         new_order = (
+        #                 (self.scale_parameters.customers_per_district - self.scale_parameters.new_orders_per_district)
+        #                 < o_id
+        #         )
+        #         o_tuples.append(self.generate_order(w_id, d_id, o_id, c_id_permutation[o_id - 1], o_ol_cnt, new_order))
+        #
+        #         ## Generate each OrderLine for the order
+        #         for ol_number in range(0, o_ol_cnt):
+        #             ol_tuples.append(
+        #                 self.generate_order_line(w_id, d_id, o_id, ol_number, self.scale_parameters.items, new_order)
+        #             )
+        #
+        #         ## This is a new order: make one for it
+        #         if new_order:
+        #             no_tuples.append([o_id, d_id, w_id])
+        #
+        #     # await self.universalis.send_kafka_event(
+        #     #     constants.OPERATOR_DISTRICT,
+        #     #     w_id,
+        #     #     constants.OPERATOR_DISTRICT.InitialiseDistrict,
+        #     #     (w_id, self.generate_warehouse(w_id))
+        #     # )
+        #
+        #     self.handle.loadTuples(constants.TABLENAME_DISTRICT, d_tuples)
+        #     self.handle.loadTuples(constants.TABLENAME_CUSTOMER, c_tuples)
+        #     self.handle.loadTuples(constants.TABLENAME_ORDERS, o_tuples)
+        #     self.handle.loadTuples(constants.TABLENAME_ORDER_LINE, ol_tuples)
+        #     self.handle.loadTuples(constants.TABLENAME_NEW_ORDER, no_tuples)
+        #     self.handle.loadTuples(constants.TABLENAME_HISTORY, h_tuples)
+        #     self.handle.loadFinishDistrict(w_id, d_id)
+        #
+        # ## Select 10% of the stock to be marked "original"
+        # s_tuples = []
+        # selected_rows = rand.select_unique_ids(self.scale_parameters.items / 10, 1, self.scale_parameters.items)
+        # total_tuples = 0
+        #
+        # for i_id in range(1, self.scale_parameters.items + 1):
+        #     original = (i_id in selected_rows)
+        #     s_tuples.append(self.generate_stock(w_id, i_id, original))
+        #
+        #     if len(s_tuples) >= self.batch_size:
+        #         logging.info(
+        #             "LOAD - %s [W_ID=%d]: %5d / %d" % (
+        #                 constants.TABLENAME_STOCK, w_id, total_tuples, self.scale_parameters.items)
+        #         )
+        #         self.handle.loadTuples(constants.TABLENAME_STOCK, s_tuples)
+        #         s_tuples = []
+        #     total_tuples += 1
+        #
+        # if len(s_tuples) > 0:
+        #     logging.info(
+        #         "LOAD - %s [W_ID=%d]: %5d / %d" % (
+        #             constants.TABLENAME_STOCK, w_id, total_tuples, self.scale_parameters.items)
+        #     )
+        #     self.handle.loadTuples(constants.TABLENAME_STOCK, s_tuples)
 
     def generate_item(self, i_id: int, original: bool) -> tuple[int, int, str, float, str]:
         i_im_id: int = rand.number(constants.MIN_IM, constants.MAX_IM)

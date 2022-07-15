@@ -35,7 +35,7 @@ class TpccBenchmark:
         logging.info('Graph submitted')
 
     async def insert_records(self):
-        await self.loader.load_items()
+        await self.loader.execute()
 
     async def run_transaction_mix(self):
         pass
