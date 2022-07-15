@@ -15,8 +15,8 @@ class Insert(StatefulFunction):
             's_data': s_data,
         }
 
-        for i, s_dist in s_dists:
-            data[f's_dist_{i}'] = s_dist
+        for i, s_dist in enumerate(s_dists):
+            data[f's_dist_{(i + 1)}'] = s_dist
 
         await self.put(key, data)
         return data

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import random
 from datetime import datetime
 
 from universalis.universalis import Universalis
@@ -48,7 +49,7 @@ class Loader:
                     constants.OPERATOR_ITEM,
                     str(i_id),
                     constants.FUNCTIONS_ITEM.Insert,
-                    (str(i_id), self.generate_item(i_id, original),)
+                    (str(i_id), self.generate_item(i_id, original))
                 )
             )
             total_tuples += 1
@@ -73,7 +74,7 @@ class Loader:
             constants.OPERATOR_WAREHOUSE,
             w_key,
             constants.FUNCTIONS_WAREHOUSE.Insert,
-            (w_key, self.generate_warehouse(w_id),)
+            (w_key, self.generate_warehouse(w_id))
         )
 
         ## DISTRICT
@@ -104,7 +105,7 @@ class Loader:
                         constants.OPERATOR_CUSTOMER,
                         c_key,
                         constants.FUNCTIONS_CUSTOMER.Insert,
-                        (c_key, self.generate_customer(w_id, d_id, c_id, bad_credit),)
+                        (c_key, self.generate_customer(w_id, d_id, c_id, bad_credit))
                     )
                 )
 
@@ -114,94 +115,119 @@ class Loader:
                         constants.OPERATOR_HISTORY,
                         h_key,
                         constants.FUNCTIONS_HISTORY.Insert,
-                        (h_key, self.generate_history(w_id, d_id, c_id),)
+                        (h_key, self.generate_history(w_id, d_id, c_id))
                     )
                 )
 
                 c_id_permutation.append(c_id)
 
-            # assert c_id_permutation[0] == 1
-            # assert c_id_permutation[self.scale_parameters.customers_per_district - 1] == \
-            #        self.scale_parameters.customers_per_district
-            #
-            # random.shuffle(c_id_permutation)
-            #
-            # o_tasks = []
-            # ol_tasks = []
-            # no_tuples = []
-            #
-            # for o_id in range(1, self.scale_parameters.customers_per_district + 1):
-            #     o_ol_cnt = rand.number(constants.MIN_OL_CNT, constants.MAX_OL_CNT)
-            #
-            #     ## The last new_orders_per_district are new orders
-            #     new_order = (
-            #             (self.scale_parameters.customers_per_district - self.scale_parameters.new_orders_per_district)
-            #             < o_id
-            #     )
-            #
-            #     o_tasks.append(
-            #         self.universalis.send_kafka_event(
-            #             constants.OPERATOR_ORDER,
-            #             o_id,
-            #             constants.FUNCTIONS_ORDER.Insert,
-            #             (self.generate_order(w_id, d_id, o_id, c_id_permutation[o_id - 1], o_ol_cnt, new_order),)
-            #         )
-            #     )
-            #
-            #     ## Generate each OrderLine for the order
-            #     for ol_number in range(0, o_ol_cnt):
-            #         ol_tasks.append(
-            #             self.universalis.send_kafka_event(
-            #                 constants.OPERATOR_ORDER_LINE,
-            #                 ol_number,
-            #                 constants.FUNCTIONS_ORDER.Insert,
-            #                 (self.generate_order(w_id, d_id, o_id, c_id_permutation[o_id - 1], o_ol_cnt, new_order),)
-            #             )
-            #         )
-            #
-            #         ol_tuples.append(
-            #             self.generate_order_line(w_id, d_id, o_id, ol_number, self.scale_parameters.items, new_order)
-            #         )
-            #
-            #     ## This is a new order: make one for it
-            #     if new_order:
-            #         no_tuples.append([o_id, d_id, w_id])
-            #
+            assert c_id_permutation[0] == 1
+            assert c_id_permutation[self.scale_parameters.customers_per_district - 1] == \
+                   self.scale_parameters.customers_per_district
+
+            random.shuffle(c_id_permutation)
+
+            o_tasks = []
+            ol_tasks = []
+            no_tasks = []
+
+            for o_id in range(1, self.scale_parameters.customers_per_district + 1):
+                o_ol_cnt = rand.number(constants.MIN_OL_CNT, constants.MAX_OL_CNT)
+
+                ## The last new_orders_per_district are new orders
+                new_order = (
+                        (self.scale_parameters.customers_per_district - self.scale_parameters.new_orders_per_district)
+                        < o_id
+                )
+
+                o_key: str = tuple_to_composite((w_id, d_id, o_id))
+                o_tasks.append(
+                    self.universalis.send_kafka_event(
+                        constants.OPERATOR_ORDER,
+                        o_key,
+                        constants.FUNCTIONS_ORDER.Insert,
+                        (o_key, self.generate_order(w_id, d_id, o_id, c_id_permutation[o_id - 1], o_ol_cnt, new_order))
+                    )
+                )
+
+                ## Generate each order_line for the order
+                for ol_number in range(0, o_ol_cnt):
+                    ol_key: str = tuple_to_composite((w_id, d_id, o_id, ol_number))
+                    ol_tasks.append(
+                        self.universalis.send_kafka_event(
+                            constants.OPERATOR_ORDER_LINE,
+                            ol_key,
+                            constants.FUNCTIONS_ORDER_LINE.Insert,
+                            (ol_key, self.generate_order_line(
+                                w_id,
+                                d_id,
+                                o_id,
+                                ol_number,
+                                self.scale_parameters.items,
+                                new_order
+                            ))
+                        )
+                    )
+
+                ## This is a new order: make one for it
+                if new_order:
+                    no_key: str = tuple_to_composite((w_id, d_id, o_id))
+                    no_tasks.append(
+                        self.universalis.send_kafka_event(
+                            constants.OPERATOR_NEW_ORDER,
+                            no_key,
+                            constants.FUNCTIONS_NEW_ORDER.Insert,
+                            (no_key, (w_id, d_id, o_id))
+                        )
+                    )
+
             await self.universalis.send_kafka_event(
                 constants.OPERATOR_DISTRICT,
                 d_id,
                 constants.FUNCTIONS_DISTRICT.Insert,
-                (self.generate_district(w_id, d_id, d_next_o_id),)
+                (self.generate_district(w_id, d_id, d_next_o_id))
             )
 
             await asyncio.gather(*c_tasks)
             await asyncio.gather(*h_tasks)
+            await asyncio.gather(*o_tasks)
+            await asyncio.gather(*ol_tasks)
+            await asyncio.gather(*no_tasks)
 
-        #
-        # ## Select 10% of the stock to be marked "original"
-        # s_tuples = []
-        # selected_rows = rand.select_unique_ids(self.scale_parameters.items / 10, 1, self.scale_parameters.items)
-        # total_tuples = 0
-        #
-        # for i_id in range(1, self.scale_parameters.items + 1):
-        #     original = (i_id in selected_rows)
-        #     s_tuples.append(self.generate_stock(w_id, i_id, original))
-        #
-        #     if len(s_tuples) >= self.batch_size:
-        #         logging.info(
-        #             "LOAD - %s [W_ID=%d]: %5d / %d" % (
-        #                 constants.TABLENAME_STOCK, w_id, total_tuples, self.scale_parameters.items)
-        #         )
-        #         self.handle.loadTuples(constants.TABLENAME_STOCK, s_tuples)
-        #         s_tuples = []
-        #     total_tuples += 1
-        #
-        # if len(s_tuples) > 0:
-        #     logging.info(
-        #         "LOAD - %s [W_ID=%d]: %5d / %d" % (
-        #             constants.TABLENAME_STOCK, w_id, total_tuples, self.scale_parameters.items)
-        #     )
-        #     self.handle.loadTuples(constants.TABLENAME_STOCK, s_tuples)
+        ## Select 10% of the stock to be marked "original"
+        s_tasks = []
+        selected_rows = rand.select_unique_ids(round(self.scale_parameters.items / 10), 1, self.scale_parameters.items)
+        total_tuples = 0
+
+        for i_id in range(1, self.scale_parameters.items + 1):
+            original = (i_id in selected_rows)
+
+            s_key: str = tuple_to_composite((w_id, i_id))
+            s_tasks.append(
+                self.universalis.send_kafka_event(
+                    constants.OPERATOR_STOCK,
+                    s_key,
+                    constants.FUNCTIONS_STOCK.Insert,
+                    (s_key, self.generate_stock(w_id, i_id, original))
+                )
+            )
+
+            if len(s_tasks) >= self.batch_size:
+                logging.info(
+                    "LOAD - %s [W_ID=%d]: %5d / %d" % (
+                        constants.TABLENAME_STOCK, w_id, total_tuples, self.scale_parameters.items)
+                )
+
+                await asyncio.gather(*s_tasks)
+                s_tasks = []
+            total_tuples += 1
+
+        if len(s_tasks) > 0:
+            logging.info(
+                "LOAD - %s [W_ID=%d]: %5d / %d" % (
+                    constants.TABLENAME_STOCK, w_id, total_tuples, self.scale_parameters.items)
+            )
+            await asyncio.gather(*s_tasks)
 
     def generate_item(self, i_id: int, original: bool) -> tuple[int, int, str, float, str]:
         i_im_id: int = rand.number(constants.MIN_IM, constants.MAX_IM)
