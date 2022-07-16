@@ -18,7 +18,11 @@ class InMemoryOperatorState(BaseOperatorState):
         await super().put(key, value, t_id, operator_name)
 
     async def put_immediate(self, key, value, operator_name: str):
+        self.to_rollback[operator_name][key] = self.data[operator_name][key]
         self.data[operator_name][key] = value
+
+    async def rollback_immediate(self, key, operator_name: str):
+        self.data[operator_name][key] = self.to_rollback[operator_name][key]
 
     async def get(self, key, t_id: int, operator_name: str) -> Any:
         async with self.read_set_locks[operator_name]:
@@ -40,7 +44,7 @@ class InMemoryOperatorState(BaseOperatorState):
     async def exists(self, key, operator_name: str):
         return True if key in self.data[operator_name] else False
 
-    async def commit(self, aborted_from_remote: set[int]):
+    async def commit(self, aborted_from_remote: set[int]) -> set[int]:
         self.aborted_transactions: set[int] = self.aborted_transactions.union(aborted_from_remote)
         committed_t_ids = set()
         for operator_name in self.write_sets.keys():

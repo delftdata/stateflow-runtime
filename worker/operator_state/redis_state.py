@@ -26,7 +26,11 @@ class RedisOperatorState(BaseOperatorState):
         await super().put(key, value, t_id, operator_name)
 
     async def put_immediate(self, key, value, operator_name: str):
+        self.to_rollback[operator_name][key] = await self.redis_connections[operator_name].get(key)
         await self.redis_connections[operator_name].set(key, msgpack_serialization(value))
+
+    async def rollback_immediate(self, key, operator_name: str):
+        await self.redis_connections[operator_name].set(key, self.to_rollback[operator_name][key])
 
     async def get(self, key, t_id: int, operator_name: str):
         logging.info(f'GET: {key} with t_id: {t_id} operator: {operator_name}')
@@ -51,7 +55,7 @@ class RedisOperatorState(BaseOperatorState):
     async def exists(self, key, operator_name: str):
         return True if await self.redis_connections[operator_name].exists(key) > 0 else False
 
-    async def commit(self, aborted_from_remote: set[int]):
+    async def commit(self, aborted_from_remote: set[int]) -> set[int]:
         self.aborted_transactions: set[int] = self.aborted_transactions.union(aborted_from_remote)
         committed_t_ids = set()
         committed_operator_t_ids = await asyncio.gather(*[self.commit_operator(operator_name)
@@ -60,7 +64,7 @@ class RedisOperatorState(BaseOperatorState):
             committed_t_ids = committed_t_ids.union(t_ids)
         return committed_t_ids
 
-    async def commit_operator(self, operator_name: str):
+    async def commit_operator(self, operator_name: str) -> set[int]:
         updates_to_commit = {}
         committed_t_ids = set()
         if len(self.write_sets[operator_name]) == 0:
