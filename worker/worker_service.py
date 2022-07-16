@@ -9,6 +9,7 @@ import aiojobs
 import aiozmq
 import uvloop
 import zmq
+import pandas as pd
 from aiokafka import AIOKafkaConsumer, TopicPartition, AIOKafkaProducer
 from aiokafka.errors import UnknownTopicOrPartitionError, KafkaConnectionError
 
@@ -35,6 +36,7 @@ EPOCH_INTERVAL: float = 0.01  # 10ms
 SEQUENCE_MAX_SIZE: int = 100
 DETERMINISTIC_REORDERING: bool = True
 FALLBACK_STRATEGY_PERCENTAGE: float = 0.1  # if more than 10% aborts use fallback strategy
+ABORT_RATE_OUTPUT_INTERVAL = 5  # How long to wait after epoch end to output to file
 
 
 class Worker:
@@ -74,6 +76,8 @@ class Worker:
         self.sequencer_lock = asyncio.Lock()
         # the remote function calls with their params to be used in the fallback
         self.remote_function_calls: dict[int, list[RunFuncPayload]] = {}  # t_id: functions that it runs
+        # Abort rate logging
+        self.abort_rates: list[float] = []  # epoch_number: abort rate
 
     async def run_function(self,
                            t_id: int,
@@ -293,8 +297,23 @@ class Worker:
                                     f'processed: {len(run_function_tasks)} functions '
                                     f'initiated {len(chain_acks)} chains '
                                     f'abort rate: {abort_rate}')
+
+                    self.abort_rates.append(abort_rate)
+
                 elif self.remote_wants_to_commit():
                     await self.handle_nothing_to_commit_case()
+
+                if self.abort_rates and (timer() - epoch_end) > ABORT_RATE_OUTPUT_INTERVAL:
+                    logging.warning('Writing abort rates to file')
+
+
+                    df = pd.DataFrame(self.abort_rates, columns=['abort_rate'])
+                    abort_rate_filename = os.path.join(
+                        '/usr/local/universalis/results',
+                        f'abort_rates_worker_{self.id}.csv'
+                    )
+                    df.to_csv(abort_rate_filename, index=False)
+                    self.abort_rates = []
 
     async def handle_nothing_to_commit_case(self):
         logging.warning(f'Epoch: {self.sequencer.epoch_counter} starts')
