@@ -25,7 +25,7 @@ class YcsbBenchmark:
         self.keys: list[int] = list(range(self.N_ROWS))
         self.operations: list[Type] = [ycsb.Read, ycsb.Update, ycsb.Transfer]
         self.operation_counts: dict[Type, int] = {transaction: 0 for transaction in self.operations}
-        self.operation_mix: list[float] = [0.1, 0.1, 0.8]
+        self.operation_mix: list[float] = [0, 0, 1]
         self.batch_size: int = 10000
 
     async def initialise(self):
