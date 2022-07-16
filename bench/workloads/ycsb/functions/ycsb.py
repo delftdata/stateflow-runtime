@@ -8,7 +8,7 @@ class NotEnoughCredit(Exception):
 class Insert(StatefulFunction):
     async def run(self, key: str):
         await self.put(key, 1)
-        return key
+        # return key
 
 
 class Read(StatefulFunction):
