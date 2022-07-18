@@ -18,12 +18,24 @@ def calculate():
     logging.info('Calculating Metrics')
 
     requests = pd.read_csv(requests_filename)
-    os.remove(requests_filename)
+    # os.remove(requests_filename)
 
     responses = pd.read_csv(responses_filename)
-    os.remove(responses_filename)
+    # os.remove(responses_filename)
 
-    merged = pd.merge(requests, responses, on='request_id', how='outer').dropna()
+    merged = pd.merge(requests, responses, on='request_id', how='outer')
+
+    missed = merged[merged['response'].isna()]
+    if len(missed) > 0:
+        print('--------------------')
+        print('\nMISSED MESSAGES!\n')
+        print('--------------------')
+        print(missed)
+        print('--------------------')
+    else:
+        print('\nNO MISSED MESSAGES!\n')
+
+    merged = merged.dropna()
     merged['latency'] = merged['timestamp_y'] - merged['timestamp_x']
     latency = merged['latency']
 

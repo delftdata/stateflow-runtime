@@ -19,13 +19,14 @@ class YcsbBenchmark:
     KAFKA_URL = 'localhost:9093'
     universalis: Universalis
 
-    N_ROWS = 10000
+    N_ROWS = 100000
 
     def __init__(self):
         self.keys: list[int] = list(range(self.N_ROWS))
-        self.operations: list[Type] = [ycsb.Read, ycsb.Update]
+        self.operations: list[Type] = [ycsb.Read, ycsb.Update, ycsb.Transfer]
         self.operation_counts: dict[Type, int] = {transaction: 0 for transaction in self.operations}
-        self.operation_mix: list[float] = [0.5, 0.5]
+        self.operation_mix: list[float] = [0, 0, 1]
+        self.batch_size: int = 10000
 
     async def initialise(self):
         self.universalis = Universalis(
@@ -52,7 +53,14 @@ class YcsbBenchmark:
                     params=(i,)
                 )
             )
-        await asyncio.gather(*tasks)
+
+            if len(tasks) >= self.batch_size:
+                await asyncio.gather(*tasks)
+                tasks = []
+
+        if len(tasks) > 0:
+            await asyncio.gather(*tasks)
+
         logging.info(f'All {self.N_ROWS} Records Inserted')
         await asyncio.sleep(2)
 
@@ -60,6 +68,7 @@ class YcsbBenchmark:
         logging.info('Running Transaction Mix')
         zipf_gen = ZipfGenerator(items=self.N_ROWS)
         tasks = []
+        responses = []
 
         for i in range(self.N_ROWS):
             key = self.keys[next(zipf_gen)]
@@ -74,7 +83,14 @@ class YcsbBenchmark:
             else:
                 tasks.append(self.universalis.send_kafka_event(ycsb_operator, key, op, (key,)))
 
-        responses = await asyncio.gather(*tasks)
+            if len(tasks) >= self.batch_size:
+                task_results = await asyncio.gather(*tasks)
+                responses += task_results
+                tasks = []
+
+        if len(tasks) > 0:
+            task_results = await asyncio.gather(*tasks)
+            responses += task_results
 
         logging.info(self.operation_counts)
         logging.info('Transaction Mix Complete')
@@ -88,7 +104,8 @@ class YcsbBenchmark:
     def generate_request_data(self, responses):
         timestamped_request_ids = {}
 
-        for request_id, timestamp in responses:
+        for response in responses:
+            request_id, timestamp = response
             timestamped_request_ids[request_id] = timestamp
 
         requests_filename = os.path.join('./results', 'requests.csv')
