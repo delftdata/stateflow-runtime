@@ -5,7 +5,7 @@ from universalis.universalis import Universalis
 
 from common.logging import logging
 from workloads.tpcc.functions.graph import g
-from workloads.tpcc.loader import Loader
+from workloads.tpcc.runtime.loader import Loader
 from workloads.tpcc.util.scale_parameters import make_with_scale_factor
 
 
@@ -41,7 +41,7 @@ class TpccBenchmark:
         pass
 
     async def cleanup(self):
-        pass
+        await self.universalis.close()
 
     def generate_request_data(self, responses):
         pass

@@ -16,7 +16,9 @@ class Executor:
     def select_transaction(self):
         x = rand.number(1, 100)
         if x <= 50:
-            txn, params = (constants.FUNCTIONS_ORDER.NewOrder, self.generate_payment_params())
+            w_id, d_id, h_amount, c_w_id, c_d_id, c_id, c_last, h_date = self.generate_payment_params()
+
+            txn, key, params = (constants.FUNCTIONS_CUSTOMER.NewOrder, c_id, self.generate_payment_params())
         else:
             txn, params = (constants.FUNCTIONS_CUSTOMER.Payment, self.generate_new_order_params())
 
@@ -30,12 +32,13 @@ class Executor:
         ol_cnt = rand.number(constants.MIN_OL_CNT, constants.MAX_OL_CNT)
         o_entry_d = datetime.now()
 
-        ## 1% of transactions roll back
+        # 1% of transactions roll back
         rollback = rand.number(1, 100) == 1
 
         i_ids = []
         i_w_ids = []
         i_qtys = []
+
         for i in range(0, ol_cnt):
             if rollback and i + 1 == ol_cnt:
                 i_ids.append(self.scale_parameters.items + 1)
@@ -45,7 +48,7 @@ class Executor:
                     i_id = self.make_item_id()
                 i_ids.append(i_id)
 
-            ## 1% of items are from a remote warehouse
+            # 1% of items are from a remote warehouse
             remote = (rand.number(1, 100) == 1)
             if self.scale_parameters.warehouses > 1 and remote:
                 i_w_ids.append(
@@ -74,13 +77,13 @@ class Executor:
         h_amount = rand.fixed_point(2, constants.MIN_PAYMENT, constants.MAX_PAYMENT)
         h_date = datetime.now()
 
-        ## 85%: paying through own warehouse (or there is only 1 warehouse)
+        # 85%: paying through own warehouse (or there is only 1 warehouse)
         if self.scale_parameters.warehouses == 1 or x <= 85:
             c_w_id = w_id
             c_d_id = d_id
-        ## 15%: paying through another warehouse:
+        # 15%: paying through another warehouse:
         else:
-            ## select in range [1, num_warehouses] excluding w_id
+            # select in range [1, num_warehouses] excluding w_id
             c_w_id = rand.number_excluding(
                 self.scale_parameters.starting_warehouse,
                 self.scale_parameters.ending_warehouse,
