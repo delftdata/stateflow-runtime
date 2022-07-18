@@ -1,3 +1,8 @@
+# -----------------------------------------------------------------------
+# Adapted from MongoDB-labs py-tpcc package:
+# https://github.com/mongodb-labs/py-tpcc/blob/master/pytpcc/runtime/loader.py
+# -----------------------------------------------------------------------
+
 import asyncio
 import logging
 import random

@@ -18,3 +18,9 @@ class Insert(StatefulFunction):
 
         await self.put(key, data)
         return data
+
+
+class NewOrder(StatefulFunction):
+    async def run(self, key: str, params: tuple):
+        pass
+

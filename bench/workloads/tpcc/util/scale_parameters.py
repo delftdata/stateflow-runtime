@@ -1,6 +1,6 @@
 # -----------------------------------------------------------------------
 # Adapted from MongoDB-labs py-tpcc package:
-# https://github.com/mongodb-labs/py-tpcc/blob/1fb6f851f5668eb9f253deb209069831c9303496/pytpcc/util/scaleparameters.py
+# https://github.com/mongodb-labs/py-tpcc/blob/master/pytpcc/util/scaleparameters.py
 # -----------------------------------------------------------------------
 import workloads.tpcc.util.constants as constants
 
