@@ -17,12 +17,15 @@ class InMemoryOperatorState(BaseOperatorState):
     async def put(self, key, value, t_id: int, operator_name: str):
         await super().put(key, value, t_id, operator_name)
 
-    async def put_immediate(self, key, value, operator_name: str):
-        self.to_rollback[operator_name][key] = self.data[operator_name][key]
-        self.data[operator_name][key] = value
+    async def put_immediate(self, key, value, t_id: int, operator_name: str):
+        await super().put_immediate(key, value, t_id, operator_name)
 
-    async def rollback_immediate(self, key, operator_name: str):
-        self.data[operator_name][key] = self.to_rollback[operator_name][key]
+    async def commit_fallback_transaction(self, t_id: int):
+        if t_id in self.fallback_commit_buffer:
+            for operator_name, kv_pairs in self.fallback_commit_buffer[t_id].items():
+                for key, value in kv_pairs.items():
+                    async with self.fallback_commit_buffer_locks[operator_name]:
+                        self.data[operator_name][key] = value
 
     async def get(self, key, t_id: int, operator_name: str) -> Any:
         async with self.read_set_locks[operator_name]:

@@ -63,11 +63,11 @@ class StatefulFunction(Function):
     async def __call__(self, *args, **kwargs):
         try:
             res = await self.run(*args)
-            if 'ack_share' in kwargs and not self.fallback_enabled:
+            if 'ack_share' in kwargs:
                 # middle of the chain
                 n_remote_calls = await self.send_async_calls(ack_share=kwargs['ack_share'])
                 return res, n_remote_calls
-            elif len(self.async_remote_calls) > 0 and not self.fallback_enabled:
+            elif len(self.async_remote_calls) > 0:
                 # start of the chain
                 n_remote_calls = await self.send_async_calls()
                 return res, n_remote_calls
@@ -76,20 +76,21 @@ class StatefulFunction(Function):
                 return res, 0
         except Exception as e:
             logging.debug(traceback.format_exc())
-            return e
+            return e, -1
 
     async def get(self, key):
         return await self.state.get(key, self.t_id, self.operator_name)
 
     async def put(self, key, value):
         if self.fallback_enabled:
-            await self.state.put_immediate(key, value, self.operator_name)
+            await self.state.put_immediate(key, value, self.t_id, self.operator_name)
         else:
             await self.state.put(key, value, self.t_id, self.operator_name)
 
     async def send_async_calls(self, ack_share=1):
         n_remote_calls: int = len(self.async_remote_calls)
-        if n_remote_calls > 0:
+        if n_remote_calls > 0 and not self.fallback_enabled:
+            # if fallback is enabled there is no need to call the functions because they are already cached
             ack_payload = await self.networking.prepare_function_chain(
                 str(fractions.Fraction(f'1/{n_remote_calls}') * fractions.Fraction(ack_share)), self.t_id)
             remote_calls: list[Awaitable] = [self.call_remote_function_no_response(*entry, ack_payload=ack_payload)

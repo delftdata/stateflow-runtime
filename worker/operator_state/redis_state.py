@@ -25,12 +25,15 @@ class RedisOperatorState(BaseOperatorState):
         value = msgpack_serialization(value)
         await super().put(key, value, t_id, operator_name)
 
-    async def put_immediate(self, key, value, operator_name: str):
-        self.to_rollback[operator_name][key] = await self.redis_connections[operator_name].get(key)
-        await self.redis_connections[operator_name].set(key, msgpack_serialization(value))
+    async def put_immediate(self, key, value, t_id: int, operator_name: str):
+        value = msgpack_serialization(value)
+        await super().put_immediate(key, value, t_id, operator_name)
 
-    async def rollback_immediate(self, key, operator_name: str):
-        await self.redis_connections[operator_name].set(key, self.to_rollback[operator_name][key])
+    async def commit_fallback_transaction(self, t_id: int):
+        if t_id in self.fallback_commit_buffer:
+            for operator_name, kv_pairs in self.fallback_commit_buffer[t_id].items():
+                async with self.fallback_commit_buffer_locks[operator_name]:
+                    await self.redis_connections[operator_name].mset(kv_pairs)
 
     async def get(self, key, t_id: int, operator_name: str):
         logging.info(f'GET: {key} with t_id: {t_id} operator: {operator_name}')

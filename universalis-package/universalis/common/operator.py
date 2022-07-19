@@ -1,5 +1,5 @@
 import logging
-from typing import Awaitable, Type
+from typing import Type, Any
 
 from .function_definition import FunctionDefinition
 from .serialization import Serializer, msgpack_deserialization
@@ -33,7 +33,7 @@ class Operator(BaseOperator):
                            function_name: str,
                            ack_payload: tuple[str, int, str],
                            fallback_mode: bool,
-                           *params) -> Awaitable:
+                           *params) -> tuple[Any, bool]:
         logging.info(f'RQ_ID: {msgpack_deserialization(request_id)} TID: {t_id} '
                      f'function: {function_name} fallback mode: {fallback_mode}')
         function = self.functions[function_name].materialize_function(self.state,
@@ -47,9 +47,8 @@ class Operator(BaseOperator):
         if ack_payload is not None:
             # part of a chain (not root)
             ack_host, ack_id, fraction_str = ack_payload
-            resp = await function(*params, ack_share=fraction_str)
-            if not isinstance(resp, Exception) and not fallback_mode:
-                resp, n_remote_calls = resp
+            resp, n_remote_calls = await function(*params, ack_share=fraction_str)
+            if not isinstance(resp, Exception):
                 if n_remote_calls == 0:
                     # final link of the chain (send ack share)
                     await self.networking.send_message(ack_host, SERVER_PORT, {"__COM_TYPE__": 'ACK',
@@ -61,9 +60,7 @@ class Operator(BaseOperator):
                                                                            "__MSG__": (ack_id, '-1')},
                                                    Serializer.MSGPACK)
         else:
-            resp = await function(*params)
-            if not isinstance(resp, Exception):
-                resp, _ = resp
+            resp, _ = await function(*params)
         del function
         return resp
 

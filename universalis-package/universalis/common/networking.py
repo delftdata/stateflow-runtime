@@ -57,10 +57,12 @@ class NetworkingManager:
         self.waited_ack_events: dict[int, asyncio.Event] = {}  # event_id: ack_event
         self.ack_fraction: dict[int, fractions.Fraction] = {}
         self.waited_ack_events_lock: asyncio.Lock = asyncio.Lock()
+        self.aborted_events: set[int] = set()
 
     def cleanup_after_epoch(self):
         self.waited_ack_events = {}
         self.ack_fraction = {}
+        self.aborted_events = set()
 
     async def add_ack_fraction_str(self, ack_id: int, fraction_str: str):
         async with self.waited_ack_events_lock:
@@ -104,9 +106,16 @@ class NetworkingManager:
             self.ack_fraction[t_id] = fractions.Fraction(0)
         return ack_payload
 
+    async def reset_ack_for_fallback(self):
+        async with self.waited_ack_events_lock:
+            self.aborted_events = set()
+            [event.clear() for event in self.waited_ack_events.values()]
+            self.ack_fraction = {t_id: fractions.Fraction(0) for t_id in self.ack_fraction.keys()}
+
     async def abort_chain(self, aborted_t_id: int):
         async with self.waited_ack_events_lock:
             self.waited_ack_events[aborted_t_id].set()
+            self.aborted_events.add(aborted_t_id)
 
     async def send_message_ack(self,
                                host,
