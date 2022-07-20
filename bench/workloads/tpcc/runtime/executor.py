@@ -24,7 +24,7 @@ class Executor:
         #     operator, key, fun, params = self.generate_payment_params()
         # else:
         operator, key, fun, params = self.generate_new_order_params()
-        await self.universalis.send_kafka_event(constants.OPERATOR_CUSTOMER, key, fun, (key, params,))
+        await self.universalis.send_kafka_event(constants.OPERATOR_ORDER, key, fun, (params,))
 
     def generate_new_order_params(self) -> tuple[Operator, str, Type, dict]:
         """Return parameters for NEW_ORDER"""
@@ -69,7 +69,7 @@ class Executor:
         params['i_qtys'] = i_qtys
         params['i_w_ids'] = i_w_ids
 
-        return constants.OPERATOR_CUSTOMER, str(self.make_customer_id()), constants.FUNCTIONS_CUSTOMER.NewOrder, params
+        return constants.OPERATOR_CUSTOMER, str(self.make_customer_id()), constants.FUNCTIONS_ORDER.NewOrder, params
 
     def generate_payment_params(self) -> tuple[Operator, str, Type, dict]:
         """Return parameters for PAYMENT"""
