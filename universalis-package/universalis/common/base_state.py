@@ -5,6 +5,10 @@ from typing import Any
 from universalis.common.logging import logging
 
 
+class ReadUncommitedException(Exception):
+    pass
+
+
 class BaseOperatorState(ABC):
     # Locks that allow for concurrent access to the read and write sets
     read_set_locks: dict[str, asyncio.Lock]  # operator_name: Lock
@@ -28,7 +32,6 @@ class BaseOperatorState(ABC):
         self.fallback_commit_buffer_locks = {operator_name: asyncio.Lock() for operator_name in self.operator_names}
         self.cleanup()
 
-    @abstractmethod
     async def put(self, key, value, t_id: int, operator_name: str):
         logging.info(f'PUT: {key}:{value} with t_id: {t_id} operator: {operator_name}')
         async with self.write_set_locks[operator_name]:
@@ -38,7 +41,6 @@ class BaseOperatorState(ABC):
                 self.write_sets[operator_name][t_id] = {key: value}
             self.writes[operator_name][key] = min(self.writes[operator_name].get(key, t_id), t_id)
 
-    @abstractmethod
     async def put_immediate(self, key, value, t_id: int, operator_name: str):
         if t_id in self.fallback_commit_buffer:
             if operator_name in self.fallback_commit_buffer[t_id]:
