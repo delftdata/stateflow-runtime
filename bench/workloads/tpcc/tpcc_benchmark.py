@@ -5,6 +5,7 @@ from universalis.universalis import Universalis
 
 from common.logging import logging
 from workloads.tpcc.functions.graph import g
+from workloads.tpcc.runtime.executor import Executor
 from workloads.tpcc.runtime.loader import Loader
 from workloads.tpcc.util.scale_parameters import make_with_scale_factor
 
@@ -16,6 +17,7 @@ class TpccBenchmark:
 
     universalis: Universalis
     loader: Loader
+    executor: Executor
 
     def __init__(self):
         self.scale_parameters = make_with_scale_factor(1, 100)
@@ -29,6 +31,7 @@ class TpccBenchmark:
         )
 
         self.loader = Loader(self.scale_parameters, [1], self.universalis)
+        self.executor = Executor(self.scale_parameters, self.universalis)
 
         await self.universalis.submit(g)
         await asyncio.sleep(2)
@@ -38,7 +41,7 @@ class TpccBenchmark:
         await self.loader.execute()
 
     async def run_transaction_mix(self):
-        pass
+        await self.executor.execute_transaction()
 
     async def cleanup(self):
         await self.universalis.close()

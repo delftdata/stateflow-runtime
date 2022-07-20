@@ -4,40 +4,44 @@
 # -----------------------------------------------------------------------
 
 from datetime import datetime
+from typing import Type
+
+from universalis.common.operator import Operator
+from universalis.universalis import Universalis
 
 from workloads.tpcc.util import rand, constants
 from workloads.tpcc.util.scale_parameters import ScaleParameters
 
 
 class Executor:
-    def __init__(self, scale_parameters: ScaleParameters):
+    def __init__(self, scale_parameters: ScaleParameters, universalis: Universalis):
         self.scale_parameters: ScaleParameters = scale_parameters
+        self.universalis: Universalis = universalis
 
-    def select_transaction(self):
-        x = rand.number(1, 100)
-        if x <= 50:
-            w_id, d_id, h_amount, c_w_id, c_d_id, c_id, c_last, h_date = self.generate_payment_params()
+    async def execute_transaction(self):
+        # x = rand.number(1, 100)
+        #
+        # if x <= 50:
+        #     operator, key, fun, params = self.generate_payment_params()
+        # else:
+        operator, key, fun, params = self.generate_new_order_params()
 
-            txn, key, params = (constants.FUNCTIONS_CUSTOMER.NewOrder, c_id, self.generate_payment_params())
-        else:
-            txn, params = (constants.FUNCTIONS_CUSTOMER.Payment, self.generate_new_order_params())
+        await self.universalis.send_kafka_event(constants.OPERATOR_CUSTOMER, key, fun, (params,))
 
-        return txn, params
-
-    def generate_new_order_params(self):
+    def generate_new_order_params(self) -> tuple[Operator, str, Type, dict]:
         """Return parameters for NEW_ORDER"""
-        w_id = self.make_warehouse_id()
-        d_id = self.make_district_id()
-        c_id = self.make_customer_id()
-        ol_cnt = rand.number(constants.MIN_OL_CNT, constants.MAX_OL_CNT)
-        o_entry_d = datetime.now()
-
+        params = {
+            'w_id': self.make_warehouse_id(),
+            'd_id': self.make_district_id(),
+            'o_entry_d': datetime.now().strftime("%m/%d/%Y, %H:%M:%S"),
+        }
         # 1% of transactions roll back
         rollback = rand.number(1, 100) == 1
 
         i_ids = []
         i_w_ids = []
         i_qtys = []
+        ol_cnt = rand.number(constants.MIN_OL_CNT, constants.MAX_OL_CNT)
 
         for i in range(0, ol_cnt):
             if rollback and i + 1 == ol_cnt:
@@ -55,44 +59,49 @@ class Executor:
                     rand.number_excluding(
                         self.scale_parameters.starting_warehouse,
                         self.scale_parameters.ending_warehouse,
-                        w_id
+                        params['w_id']
                     )
                 )
             else:
-                i_w_ids.append(w_id)
+                i_w_ids.append(params['w_id'])
 
             i_qtys.append(rand.number(1, constants.MAX_OL_QUANTITY))
 
-        return w_id, d_id, c_id, o_entry_d, i_ids, i_w_ids, i_qtys
+        params['i_ids'] = i_ids
+        params['i_qtys'] = i_qtys
+        params['i_w_ids'] = i_w_ids
 
-    def generate_payment_params(self):
+        return constants.OPERATOR_CUSTOMER, str(self.make_customer_id()), constants.FUNCTIONS_CUSTOMER.NewOrder, params
+
+    def generate_payment_params(self) -> tuple[Operator, str, Type, dict]:
         """Return parameters for PAYMENT"""
         x = rand.number(1, 100)
-        y = rand.number(1, 100)
+        key: str = str(self.make_customer_id())
 
-        w_id = self.make_warehouse_id()
-        d_id = self.make_district_id()
-        c_id = self.make_customer_id()
-        c_last = None
-        h_amount = rand.fixed_point(2, constants.MIN_PAYMENT, constants.MAX_PAYMENT)
-        h_date = datetime.now()
+        params = {
+            'w_id': self.make_warehouse_id(),
+            'd_id': self.make_district_id(),
+            'c_last': None,
+            'h_amount': rand.fixed_point(2, constants.MIN_PAYMENT, constants.MAX_PAYMENT),
+            'h_date': datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
+        }
 
         # 85%: paying through own warehouse (or there is only 1 warehouse)
         if self.scale_parameters.warehouses == 1 or x <= 85:
-            c_w_id = w_id
-            c_d_id = d_id
+            params['c_w_id'] = params['w_id']
+            params['c_d_id'] = params['d_id']
         # 15%: paying through another warehouse:
         else:
             # select in range [1, num_warehouses] excluding w_id
-            c_w_id = rand.number_excluding(
+            params['c_w_id'] = rand.number_excluding(
                 self.scale_parameters.starting_warehouse,
                 self.scale_parameters.ending_warehouse,
-                w_id
+                params['w_id']
             )
-            assert c_w_id != w_id, "Failed to generate W_ID that's not equal to C_W_ID"
-            c_d_id = self.make_district_id()
+            assert params['c_w_id'] != params['w_id'], "Failed to generate W_ID that's not equal to C_W_ID"
+            params['c_d_id'] = self.make_district_id()
 
-        return w_id, d_id, h_amount, c_w_id, c_d_id, c_id, c_last, h_date
+        return constants.OPERATOR_CUSTOMER, key, constants.FUNCTIONS_CUSTOMER.Payment, params
 
     def make_warehouse_id(self):
         w_id = rand.number(self.scale_parameters.starting_warehouse, self.scale_parameters.ending_warehouse)
@@ -104,7 +113,7 @@ class Executor:
         return rand.number(1, self.scale_parameters.districts_per_warehouse)
 
     def make_customer_id(self):
-        return rand.NURandC(1023, 1, self.scale_parameters.customers_per_district)
+        return rand.NURandC(1023, 1, self.scale_parameters.customers_per_district).c_id
 
     def make_item_id(self):
-        return rand.NURandC(8191, 1, self.scale_parameters.items)
+        return rand.NURandC(8191, 1, self.scale_parameters.items).order_line_item_id
