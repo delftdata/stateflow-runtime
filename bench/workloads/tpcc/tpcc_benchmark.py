@@ -7,6 +7,7 @@ from common.logging import logging
 from workloads.tpcc.functions.graph import g
 from workloads.tpcc.runtime.executor import Executor
 from workloads.tpcc.runtime.loader import Loader
+from workloads.tpcc.util import rand, nurand
 from workloads.tpcc.util.scale_parameters import make_with_scale_factor
 
 
@@ -20,7 +21,8 @@ class TpccBenchmark:
     executor: Executor
 
     def __init__(self):
-        self.scale_parameters = make_with_scale_factor(1, 100)
+        self.scale_parameters = make_with_scale_factor(1, 1000)
+        self.nu_rand = rand.set_nu_rand(nurand.make_for_load())
 
     async def initialise(self):
         self.universalis = Universalis(
@@ -52,6 +54,7 @@ class TpccBenchmark:
     async def run(self):
         await self.initialise()
         await self.insert_records()
-        responses = await self.run_transaction_mix()
+        logging.info('Records inserted')
+        await self.run_transaction_mix()
         await self.cleanup()
-        self.generate_request_data(responses)
+        # self.generate_request_data(responses)

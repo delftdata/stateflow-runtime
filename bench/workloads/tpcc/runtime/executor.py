@@ -2,7 +2,6 @@
 # Adapted from MongoDB-labs py-tpcc package:
 # https://github.com/mongodb-labs/py-tpcc/blob/master/pytpcc/runtime/executor.py
 # -----------------------------------------------------------------------
-
 from datetime import datetime
 from typing import Type
 
@@ -25,8 +24,7 @@ class Executor:
         #     operator, key, fun, params = self.generate_payment_params()
         # else:
         operator, key, fun, params = self.generate_new_order_params()
-
-        await self.universalis.send_kafka_event(constants.OPERATOR_CUSTOMER, key, fun, (params,))
+        await self.universalis.send_kafka_event(constants.OPERATOR_CUSTOMER, key, fun, (key, params,))
 
     def generate_new_order_params(self) -> tuple[Operator, str, Type, dict]:
         """Return parameters for NEW_ORDER"""
@@ -103,17 +101,17 @@ class Executor:
 
         return constants.OPERATOR_CUSTOMER, key, constants.FUNCTIONS_CUSTOMER.Payment, params
 
-    def make_warehouse_id(self):
+    def make_warehouse_id(self) -> int:
         w_id = rand.number(self.scale_parameters.starting_warehouse, self.scale_parameters.ending_warehouse)
         assert (w_id >= self.scale_parameters.starting_warehouse), "Invalid W_ID: %d" % w_id
         assert (w_id <= self.scale_parameters.ending_warehouse), "Invalid W_ID: %d" % w_id
         return w_id
 
-    def make_district_id(self):
+    def make_district_id(self) -> int:
         return rand.number(1, self.scale_parameters.districts_per_warehouse)
 
-    def make_customer_id(self):
-        return rand.NURandC(1023, 1, self.scale_parameters.customers_per_district).c_id
+    def make_customer_id(self) -> int:
+        return rand.nu_rand(1023, 1, self.scale_parameters.customers_per_district)
 
-    def make_item_id(self):
-        return rand.NURandC(8191, 1, self.scale_parameters.items).order_line_item_id
+    def make_item_id(self) -> int:
+        return rand.nu_rand(8191, 1, self.scale_parameters.items)
