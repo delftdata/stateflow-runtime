@@ -100,12 +100,11 @@ class Payment(StatefulFunction):
             # -----------------------------------
             c_data: str = ''
 
-        customer_data: dict = {
-            'c_balance': c_balance,
-            'c_ytd_payment': c_ytd_payment,
-            'c_payment_cnt': c_payment_cnt,
-            'c_data': c_data,
-        }
+        customer_data['c_balance'] = c_balance
+        customer_data['c_ytd_payment'] = c_ytd_payment
+        customer_data['c_payment_cnt'] = c_payment_cnt
+        customer_data['c_data'] = c_data
+
         await self.put(key, customer_data)
 
         # Concatenate w_name, four spaces, d_name
@@ -125,7 +124,7 @@ class Payment(StatefulFunction):
             'h_amount': h_amount,
             'h_data': h_data,
         }
-        
+
         await self.call_remote_function_no_response(
             'history',
             'InsertHistory',
