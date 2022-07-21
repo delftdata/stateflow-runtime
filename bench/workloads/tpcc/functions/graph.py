@@ -36,11 +36,11 @@ warehouse_operator = Operator('warehouse', n_partitions=PARTITIONS_PER_OPERATOR)
 # REGISTER OPERATOR FUNCTIONS ########################################################################################
 ####################################################################################################################
 customer_operator.register_stateful_functions(customer.Insert, customer.Payment, customer.Get)
-district_operator.register_stateful_functions(district.Insert, district.Get)
+district_operator.register_stateful_functions(district.Insert, district.Get, district.NewOrder)
 history_operator.register_stateful_functions(history.Insert, history.Get)
 item_operator.register_stateful_functions(item.Insert, item.Get)
 new_order_operator.register_stateful_functions(new_order.Insert, new_order.Get)
-order_operator.register_stateful_functions(order.Insert, order.Get, order.NewOrder)
+order_operator.register_stateful_functions(order.Insert, order.Get)
 order_line_operator.register_stateful_functions(order_line.Insert, order_line.Get)
 stock_operator.register_stateful_functions(stock.Insert, stock.Get)
 warehouse_operator.register_stateful_functions(warehouse.Insert, warehouse.Get)

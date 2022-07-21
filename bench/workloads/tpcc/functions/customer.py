@@ -30,7 +30,6 @@ class Payment(StatefulFunction):
         h_amount: float = params['h_amount']
         c_w_id: str = params['c_w_id']
         c_d_id: str = params['c_d_id']
-        c_id: str = key
         c_last: str = params['c_last']
         h_date: str = params['h_date']
         logging.warning('Initiated parameters')
@@ -38,14 +37,8 @@ class Payment(StatefulFunction):
         # --------------------------
         # Get Customer By ID Query
         # --------------------------
-        customer_key = tuple_to_composite((w_id, d_id, c_id))
-        customer_data = await self.call_remote_function_request_response(
-            'customer',
-            'Get',
-            customer_key,
-            (customer_key,)
-        )
-        logging.warning(f'Customer data = {customer_key}')
+        customer_data = await self.get(key)
+        logging.warning(f'Customer data = {customer_data}')
 
         c_balance: float = float(customer_data['c_balance']) - h_amount
         c_ytd_payment: float = float(customer_data['c_ytd_payment']) + h_amount
@@ -67,14 +60,14 @@ class Payment(StatefulFunction):
         # --------------------
         # Get District Query
         # --------------------
-        district_key = str(d_id)
+        district_key = tuple_to_composite((w_id, d_id))
         district_data: dict = await self.call_remote_function_request_response(
             'district',
             'Get',
             district_key,
             (district_key,)
         )
-        logging.warning(f'District data = {warehouse_data}')
+        logging.warning(f'District data = {district_data}')
 
         # --------------------------------
         # Update Warehouse Balance Query
@@ -86,18 +79,20 @@ class Payment(StatefulFunction):
             warehouse_key,
             (warehouse_key, warehouse_data)
         )
+        logging.warning(f'Warehouse data updated')
 
         # -------------------------------
         # Update District Balance Query
         # -------------------------------
-        district_data['w_ytd'] = float(district_data['w_ytd']) + h_amount
+        district_data['d_ytd'] = float(district_data['d_ytd']) + h_amount
         await self.call_remote_function_no_response('district', 'Insert', district_key, (district_key, district_data))
+        logging.warning(f'District data updated')
 
         if customer_data['c_credit'] == constants.BAD_CREDIT:
             # ----------------------------------
             # Update Bad Credit Customer Query
             # ----------------------------------
-            new_data = " ".join(map(str, [c_id, c_d_id, c_w_id, d_id, w_id, h_amount]))
+            new_data = " ".join(map(str, [key, c_d_id, c_w_id, d_id, w_id, h_amount]))
             c_data = (new_data + "|" + c_data)
 
             if len(c_data) > constants.MAX_C_DATA:
@@ -114,7 +109,8 @@ class Payment(StatefulFunction):
             'c_payment_cnt': c_payment_cnt,
             'c_data': c_data,
         }
-        await self.call_remote_function_no_response('customer', 'Insert', customer_key, (customer_key, customer_data))
+        await self.put(key, customer_data)
+        logging.warning(f'Customer data updated')
 
         # Concatenate w_name, four spaces, d_name
         h_data = "%s    %s" % (warehouse_data['w_name'], district_data['d_name'])
@@ -122,9 +118,9 @@ class Payment(StatefulFunction):
         # ----------------------
         # Insert History Query
         # ----------------------
-        history_key = tuple_to_composite((c_id, d_id, w_id))
+        history_key = tuple_to_composite((w_id, d_id, key))
         history_params = {
-            'h_c_id': c_id,
+            'h_c_id': key,
             'h_c_d_id': c_d_id,
             'h_c_w_id': c_w_id,
             'h_d_id': d_id,
@@ -134,6 +130,7 @@ class Payment(StatefulFunction):
             'h_data': h_data,
         }
         await self.call_remote_function_no_response('history', 'Insert', history_key, (history_key, history_params))
+        logging.warning(f'History data updated')
 
         # TPC-C 2.5.3.3: Must display the following fields:
         # W_ID, D_ID, C_ID, C_D_ID, C_W_ID, W_STREET_1, W_STREET_2, W_CITY,

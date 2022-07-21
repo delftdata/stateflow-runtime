@@ -8,9 +8,10 @@ from typing import Type
 from universalis.common.operator import Operator
 from universalis.universalis import Universalis
 
-from workloads.tpcc.functions import order, customer
-from workloads.tpcc.functions.graph import customer_operator
+from workloads.tpcc.functions import customer, district
+from workloads.tpcc.functions.graph import customer_operator, district_operator
 from workloads.tpcc.util import rand, constants
+from workloads.tpcc.util.key import tuple_to_composite
 from workloads.tpcc.util.scale_parameters import ScaleParameters
 
 
@@ -35,6 +36,8 @@ class Executor:
             'd_id': self.make_district_id(),
             'o_entry_d': datetime.now().strftime("%m/%d/%Y, %H:%M:%S"),
         }
+        key: str = tuple_to_composite((params['w_id'], params['d_id']))
+
         # 1% of transactions roll back
         rollback = rand.number(1, 100) == 1
 
@@ -71,20 +74,21 @@ class Executor:
         params['i_qtys'] = i_qtys
         params['i_w_ids'] = i_w_ids
 
-        return customer_operator, str(self.make_customer_id()), order.NewOrder, params
+        return district_operator, key, district.NewOrder, params
 
     def generate_payment_params(self) -> tuple[Operator, str, Type, dict]:
         """Return parameters for PAYMENT"""
         x = rand.number(1, 100)
-        key: str = str(self.make_customer_id())
 
         params = {
+            'c_id': self.make_customer_id(),
             'w_id': self.make_warehouse_id(),
             'd_id': self.make_district_id(),
             'c_last': None,
             'h_amount': rand.fixed_point(2, constants.MIN_PAYMENT, constants.MAX_PAYMENT),
             'h_date': datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
         }
+        key: str = tuple_to_composite((params['w_id'], params['d_id'], params['c_id']))
 
         # 85%: paying through own warehouse (or there is only 1 warehouse)
         if self.scale_parameters.warehouses == 1 or x <= 85:
