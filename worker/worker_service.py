@@ -77,12 +77,10 @@ class Worker:
         # Abort rate logging
         self.abort_rates: list[float] = []  # epoch_number: abort rate
 
-    async def run_function(
-            self,
-            t_id: int,
-            payload: RunFuncPayload,
-            internal_msg: bool = False
-            ):
+    async def run_function(self,
+                           t_id: int,
+                           payload: RunFuncPayload,
+                           internal_msg: bool = False) -> bool:
         operator_partition = self.registered_operators[(payload.operator_name, payload.partition)]
         response = await asyncio.ensure_future(
             operator_partition.run_function(
@@ -97,13 +95,9 @@ class Worker:
             )
 
         if payload.response_socket is not None:
-            self.router.write(
-                (payload.response_socket, self.networking.encode_message(
-                    response,
-                    Serializer.MSGPACK
-                    ))
-                )
-        elif response is not None and not internal_msg:  # TODO if remote-multipart internal broadcast error
+            self.router.write((payload.response_socket, self.networking.encode_message(response,
+                                                                                       Serializer.MSGPACK)))
+        elif response is not None and not internal_msg:
             if isinstance(response, Exception):
                 self.logic_aborts.add(t_id)
                 response = str(response)
@@ -117,51 +111,9 @@ class Worker:
                 )
             else:
                 self.response_buffer[t_id] = (payload.request_id, response)
-
-    async def send_commit_to_peers(self, aborted: set[int], processed_seq_size: int):
-        for worker_id, url in self.peers.items():
-            await asyncio.ensure_future(
-                (self.networking.send_message(
-                    url[0], url[1],
-                    {
-                        "__COM_TYPE__": 'CMT',
-                        "__MSG__": (self.id, list(aborted),
-                                    list(self.logic_aborts),
-                                    self.sequencer.t_counter,
-                                    processed_seq_size)
-                    },
-                    Serializer.MSGPACK
-                    ))
-                )
-
-    async def send_fallback_sync_to_peers(self, phase: str):
-        for worker_id, url in self.peers.items():
-            await asyncio.ensure_future(
-                (self.networking.send_message(
-                    url[0], url[1],
-                    {
-                        "__COM_TYPE__": phase,
-                        "__MSG__": self.id
-                    },
-                    Serializer.MSGPACK
-                    ))
-                )
-
-    async def send_responses(self, concurrency_aborts_everywhere: set[int], logic_aborts_everywhere: set[int]):
-        send_message_tasks = []
-        for t_id, response in self.response_buffer.items():
-            if t_id not in concurrency_aborts_everywhere or t_id in logic_aborts_everywhere:
-                # if committed or had an application logic error
-                send_message_tasks.append(
-                    asyncio.ensure_future(
-                        self.kafka_egress_producer.send_and_wait(
-                            EGRESS_TOPIC_NAME,
-                            key=response[0],
-                            value=msgpack_serialization(response[1])
-                            )
-                    )
-                )
-        await asyncio.gather(*send_message_tasks)
+        if isinstance(response, Exception):
+            return False
+        return True
 
     async def run_fallback_function(
             self,
@@ -174,7 +126,7 @@ class Worker:
                                          for dependency in self.waiting_on_transactions.get(t_id, {}).values()]
         await asyncio.gather(*waiting_on_transactions_tasks)
         # Run transaction
-        await self.run_function(t_id, payload, internal_msg=internal)
+        success = await self.run_function(t_id, payload, internal_msg=internal)
         # Run local "remote" function calls of the same transaction
         local_t_functions: list[RunFuncPayload] = self.remote_function_calls.get(t_id, None)
         if local_t_functions is not None:
@@ -182,9 +134,19 @@ class Worker:
             for pld in local_t_functions:
                 local_t_function_tasks.append(self.run_function(t_id, pld, internal_msg=True))
             await asyncio.gather(*local_t_function_tasks)
-        # TODO need to rollback or do something else in case of failures MVCC?
-        # Release the locks
-        [ev.set() for ev in self.waiting_on_transactions_index.get(t_id, [])]
+
+        if not internal:
+            # if root of chain
+            if t_id in self.networking.waited_ack_events:
+                # wait on ack
+                await self.networking.waited_ack_events[t_id].wait()
+            if t_id in self.networking.aborted_events or not success:
+                await self.send_fallback_unlock_to_peers(t_id, success=False)
+            else:
+                await self.send_fallback_unlock_to_peers(t_id, success=True)
+                await self.local_state.commit_fallback_transaction(t_id)
+            # Release the locks for local
+            [ev.set() for ev in self.waiting_on_transactions_index.get(t_id, [])]
 
     def fallback_locking_mechanism(self, t_id, operator_name, key):
         key_id = (operator_name, key)
@@ -222,14 +184,13 @@ class Worker:
         aborted_sequence_t_ids: set[int] = {item.t_id for item in aborted_sequence}
         fallback_tasks = []
         for sequenced_item in aborted_sequence:
-            fallback_tasks.append(
-                self.run_fallback_function(
-                    sequenced_item.t_id,
-                    sequenced_item.payload
-                    )
-                )
+            # current worker is the root of the chain
+            fallback_tasks.append(self.run_fallback_function(sequenced_item.t_id,
+                                                             sequenced_item.payload))
+
         for t_id, payloads in self.remote_function_calls.items():
-            if t_id not in aborted_sequence_t_ids:
+            if t_id not in aborted_sequence_t_ids and t_id not in logic_aborts_everywhere:
+                # part of the chain since it came from remote
                 first_func_t_id = t_id
                 first_func_payload = payloads[0]
                 fallback_tasks.append(
@@ -256,6 +217,8 @@ class Worker:
             logging.warning(str_to_print)
             if size == 0:
                 break
+            acks_remaining = sum([1 for event in self.networking.waited_ack_events.values() if not event.is_set()])
+            logging.warning(f'ACKs remaining: {acks_remaining}')
 
     async def function_scheduler(self):
         while True:
@@ -384,14 +347,15 @@ class Worker:
         abort_rate: float = len(remote_aborted) / total_processed_functions
         if abort_rate > FALLBACK_STRATEGY_PERCENTAGE:
             await self.wait_fallback_start_sync()
-            logging.warning(
-                f'Epoch: {self.sequencer.epoch_counter} '
-                f'Abort percentage: {int(abort_rate * 100)}% initiating fallback strategy...'
+            if len(self.remote_function_calls) > 0:
+                logic_aborts_everywhere: set[int] = set(
+                    itertools.chain.from_iterable(self.logic_aborts_from_remote.values())
                 )
-            logging.warning(
-                f'Epoch: {self.sequencer.epoch_counter} '
-                f'Fallback strategy done waiting for peers'
-                )
+                await self.run_fallback_strategy(set(), logic_aborts_everywhere)
+            logging.warning(f'Epoch: {self.sequencer.epoch_counter} '
+                            f'Abort percentage: {int(abort_rate * 100)}% initiating fallback strategy...')
+            logging.warning(f'Epoch: {self.sequencer.epoch_counter} '
+                            f'Fallback strategy done waiting for peers')
             await self.wait_fallback_done_sync()
 
         await self.sequencer.increment_epoch(self.t_counters.values())
@@ -409,15 +373,14 @@ class Worker:
                                 for event in self.fallback_done.values()]
         await asyncio.gather(*wait_remote_fallback)
         self.fallback_mode = False
-        # self.networking.cleanup_after_epoch()
 
     async def wait_fallback_start_sync(self):
+        await self.networking.reset_ack_for_fallback()
+        self.fallback_mode = True
         await self.send_fallback_sync_to_peers('FALLBACK_START')
         wait_remote_fallback = [event.wait()
                                 for event in self.fallback_start.values()]
         await asyncio.gather(*wait_remote_fallback)
-        self.fallback_mode = True
-        # self.networking.cleanup_after_epoch()
 
     def cleanup_after_epoch(self):
         for event in self.ready_to_commit_events.values():
@@ -549,12 +512,22 @@ class Worker:
                 self.fallback_start[remote_worker_id].set()
             case 'ACK':
                 ack_id, fraction_str = message
+                # logging.warning(f'Received ack: {ack_id} -> {fraction_str}')
                 if fraction_str != '-1':
                     await self.networking.add_ack_fraction_str(ack_id, fraction_str)
                     logging.info(f'ACK received for {ack_id} part: {fraction_str}')
                 else:
                     logging.info(f'ABORT ACK received for {ack_id}')
                     await self.networking.abort_chain(ack_id)
+            case 'UNLOCK':
+                # fallback phase
+                # here we handle the logic to unlock locks held by the provided distributed transaction
+                t_id, success = message
+                if success:
+                    # commit changes
+                    await self.local_state.commit_fallback_transaction(t_id)
+                # unlock
+                [ev.set() for ev in self.waiting_on_transactions_index.get(t_id, [])]
             case _:
                 logging.error(f"Worker Service: Non supported command message type: {message_type}")
 
@@ -629,6 +602,42 @@ class Worker:
         )
         self.sequencer.set_worker_id(self.id)
         logging.info(f"Worker id: {self.id}")
+
+    async def send_commit_to_peers(self, aborted: set[int], processed_seq_size: int):
+        for worker_id, url in self.peers.items():
+            await asyncio.ensure_future((self.networking.send_message(url[0], url[1],
+                                                                      {"__COM_TYPE__": 'CMT',
+                                                                       "__MSG__": (self.id, list(aborted),
+                                                                                   list(self.logic_aborts),
+                                                                                   self.sequencer.t_counter,
+                                                                                   processed_seq_size)},
+                                                                      Serializer.MSGPACK)))
+
+    async def send_fallback_unlock_to_peers(self, t_id: int, success: bool):
+        for worker_id, url in self.peers.items():
+            await asyncio.ensure_future((self.networking.send_message(url[0], url[1],
+                                                                      {"__COM_TYPE__": 'UNLOCK',
+                                                                       "__MSG__": (t_id, success)},
+                                                                      Serializer.MSGPACK)))
+
+    async def send_fallback_sync_to_peers(self, phase: str):
+        for worker_id, url in self.peers.items():
+            await asyncio.ensure_future((self.networking.send_message(url[0], url[1],
+                                                                      {"__COM_TYPE__": phase,
+                                                                       "__MSG__": self.id},
+                                                                      Serializer.MSGPACK)))
+
+    async def send_responses(self, concurrency_aborts_everywhere: set[int], logic_aborts_everywhere: set[int]):
+        send_message_tasks = []
+        for t_id, response in self.response_buffer.items():
+            if t_id not in concurrency_aborts_everywhere or t_id in logic_aborts_everywhere:
+                # if committed or had an application logic error
+                send_message_tasks.append(
+                    asyncio.ensure_future(
+                        self.kafka_egress_producer.send_and_wait(EGRESS_TOPIC_NAME,
+                                                                 key=response[0],
+                                                                 value=msgpack_serialization(response[1]))))
+        await asyncio.gather(*send_message_tasks)
 
     async def main(self):
         self.scheduler = await aiojobs.create_scheduler(limit=None)

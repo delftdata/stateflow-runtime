@@ -3,12 +3,8 @@ import asyncio
 import redis.asyncio as redis
 
 from universalis.common.logging import logging
-from universalis.common.base_state import BaseOperatorState
+from universalis.common.base_state import BaseOperatorState, ReadUncommitedException
 from universalis.common.serialization import msgpack_serialization, msgpack_deserialization
-
-
-class ReadUncommitedException(Exception):
-    pass
 
 
 class RedisOperatorState(BaseOperatorState):
@@ -21,16 +17,12 @@ class RedisOperatorState(BaseOperatorState):
             self.redis_connections[operator_name] = redis.Redis(unix_socket_path='/tmp/redis.sock', db=i)
             self.writing_to_db_locks[operator_name] = asyncio.Lock()
 
-    async def put(self, key, value, t_id: int, operator_name: str):
-        value = msgpack_serialization(value)
-        await super().put(key, value, t_id, operator_name)
-
-    async def put_immediate(self, key, value, operator_name: str):
-        self.to_rollback[operator_name][key] = await self.redis_connections[operator_name].get(key)
-        await self.redis_connections[operator_name].set(key, msgpack_serialization(value))
-
-    async def rollback_immediate(self, key, operator_name: str):
-        await self.redis_connections[operator_name].set(key, self.to_rollback[operator_name][key])
+    async def commit_fallback_transaction(self, t_id: int):
+        if t_id in self.fallback_commit_buffer:
+            for operator_name, kv_pairs in self.fallback_commit_buffer[t_id].items():
+                serialized_kv_pairs = {key: msgpack_serialization(value) for key, value in kv_pairs.items()}
+                async with self.fallback_commit_buffer_locks[operator_name]:
+                    await self.redis_connections[operator_name].mset(serialized_kv_pairs)
 
     async def get(self, key, t_id: int, operator_name: str):
         logging.info(f'GET: {key} with t_id: {t_id} operator: {operator_name}')
@@ -42,7 +34,10 @@ class RedisOperatorState(BaseOperatorState):
         async with self.writing_to_db_locks[operator_name]:
             db_value = await self.redis_connections[operator_name].get(key)
         if db_value is None:
-            raise ReadUncommitedException(f'Read uncommitted or does not exit in DB of key: {key}')
+            if t_id in self.write_sets[operator_name] and key in self.write_sets[operator_name][t_id]:
+                return self.write_sets[operator_name][t_id][key]
+            else:
+                raise ReadUncommitedException(f'Read uncommitted or does not exit in DB of key: {key}')
         else:
             self.reads[operator_name][key] = min(self.reads[operator_name].get(key, t_id), t_id)
             value = msgpack_deserialization(db_value)
@@ -75,6 +70,7 @@ class RedisOperatorState(BaseOperatorState):
                 committed_t_ids.add(t_id)
         if updates_to_commit:
             logging.info(f'Committing: {updates_to_commit}')
+            serialized_kv_pairs = {key: msgpack_serialization(value) for key, value in updates_to_commit.items()}
             async with self.writing_to_db_locks[operator_name]:
-                await self.redis_connections[operator_name].mset(updates_to_commit)
+                await self.redis_connections[operator_name].mset(serialized_kv_pairs)
         return committed_t_ids

@@ -5,10 +5,15 @@ from typing import Any
 from universalis.common.logging import logging
 
 
+class ReadUncommitedException(Exception):
+    pass
+
+
 class BaseOperatorState(ABC):
     # Locks that allow for concurrent access to the read and write sets
     read_set_locks: dict[str, asyncio.Lock]  # operator_name: Lock
     write_set_locks: dict[str, asyncio.Lock]  # operator_name: Lock
+    fallback_commit_buffer_locks: dict[str, asyncio.Lock]  # operator_name: Lock
     # read write sets
     read_sets: dict[str, dict[int, set[Any]]]  # operator_name: {t_id: set(keys)}
     write_sets: dict[str, dict[int, dict[Any, Any]]]  # operator_name: {t_id: {key: value}}
@@ -18,15 +23,15 @@ class BaseOperatorState(ABC):
     # the transactions that are aborted
     aborted_transactions: set[int]
     # Calving snapshot things
-    to_rollback: dict
+    fallback_commit_buffer: dict[int, dict[str, dict[Any, Any]]]  # tid: {operator_name: {key, value}}
 
     def __init__(self, operator_names: set[str]):
         self.operator_names = operator_names
         self.read_set_locks = {operator_name: asyncio.Lock() for operator_name in self.operator_names}
         self.write_set_locks = {operator_name: asyncio.Lock() for operator_name in self.operator_names}
+        self.fallback_commit_buffer_locks = {operator_name: asyncio.Lock() for operator_name in self.operator_names}
         self.cleanup()
 
-    @abstractmethod
     async def put(self, key, value, t_id: int, operator_name: str):
         logging.info(f'PUT: {key}:{value} with t_id: {t_id} operator: {operator_name}')
         async with self.write_set_locks[operator_name]:
@@ -36,12 +41,17 @@ class BaseOperatorState(ABC):
                 self.write_sets[operator_name][t_id] = {key: value}
             self.writes[operator_name][key] = min(self.writes[operator_name].get(key, t_id), t_id)
 
-    @abstractmethod
-    async def put_immediate(self, key, value, operator_name: str):
-        raise NotImplementedError
+    async def put_immediate(self, key, value, t_id: int, operator_name: str):
+        if t_id in self.fallback_commit_buffer:
+            if operator_name in self.fallback_commit_buffer[t_id]:
+                self.fallback_commit_buffer[t_id][operator_name].update({key: value})
+            else:
+                self.fallback_commit_buffer[t_id] = {operator_name: {key: value}}
+        else:
+            self.fallback_commit_buffer[t_id] = {operator_name: {key: value}}
 
     @abstractmethod
-    async def rollback_immediate(self, key, operator_name: str):
+    async def commit_fallback_transaction(self, t_id: int):
         raise NotImplementedError
 
     @abstractmethod
@@ -125,4 +135,4 @@ class BaseOperatorState(ABC):
         self.reads = {operator_name: {} for operator_name in self.operator_names}
         self.read_sets = {operator_name: {} for operator_name in self.operator_names}
         self.aborted_transactions = set()
-        self.to_rollback = {operator_name: {} for operator_name in self.operator_names}
+        self.fallback_commit_buffer = {}

@@ -1,7 +1,6 @@
 from typing import Any
 
-from universalis.common.logging import logging
-from universalis.common.base_state import BaseOperatorState
+from universalis.common.base_state import BaseOperatorState, ReadUncommitedException
 
 
 class InMemoryOperatorState(BaseOperatorState):
@@ -14,15 +13,12 @@ class InMemoryOperatorState(BaseOperatorState):
         for operator_name in operator_names:
             self.data[operator_name] = {}
 
-    async def put(self, key, value, t_id: int, operator_name: str):
-        await super().put(key, value, t_id, operator_name)
-
-    async def put_immediate(self, key, value, operator_name: str):
-        self.to_rollback[operator_name][key] = self.data[operator_name][key]
-        self.data[operator_name][key] = value
-
-    async def rollback_immediate(self, key, operator_name: str):
-        self.data[operator_name][key] = self.to_rollback[operator_name][key]
+    async def commit_fallback_transaction(self, t_id: int):
+        if t_id in self.fallback_commit_buffer:
+            for operator_name, kv_pairs in self.fallback_commit_buffer[t_id].items():
+                for key, value in kv_pairs.items():
+                    async with self.fallback_commit_buffer_locks[operator_name]:
+                        self.data[operator_name][key] = value
 
     async def get(self, key, t_id: int, operator_name: str) -> Any:
         async with self.read_set_locks[operator_name]:
@@ -35,7 +31,10 @@ class InMemoryOperatorState(BaseOperatorState):
             self.reads[operator_name][key] = min(self.reads[operator_name].get(key, t_id), t_id)
             return value
         except KeyError:
-            logging.warning(f'Key: {key} does not exist')
+            if t_id in self.write_sets[operator_name] and key in self.write_sets[operator_name][t_id]:
+                return self.write_sets[operator_name][t_id][key]
+            else:
+                raise ReadUncommitedException(f'Read uncommitted or does not exit in DB of key: {key}')
 
     async def delete(self, key: str, operator_name: str):
         # Need to find a way to implement deletes
