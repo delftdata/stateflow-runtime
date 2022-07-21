@@ -8,6 +8,8 @@ from typing import Type
 from universalis.common.operator import Operator
 from universalis.universalis import Universalis
 
+from workloads.tpcc.functions import order, customer
+from workloads.tpcc.functions.graph import order_operator, customer_operator
 from workloads.tpcc.util import rand, constants
 from workloads.tpcc.util.scale_parameters import ScaleParameters
 
@@ -24,7 +26,7 @@ class Executor:
         #     operator, key, fun, params = self.generate_payment_params()
         # else:
         operator, key, fun, params = self.generate_new_order_params()
-        await self.universalis.send_kafka_event(constants.OPERATOR_ORDER, key, fun, (params,))
+        await self.universalis.send_kafka_event(order_operator, key, fun, (params,))
 
     def generate_new_order_params(self) -> tuple[Operator, str, Type, dict]:
         """Return parameters for NEW_ORDER"""
@@ -69,7 +71,7 @@ class Executor:
         params['i_qtys'] = i_qtys
         params['i_w_ids'] = i_w_ids
 
-        return constants.OPERATOR_CUSTOMER, str(self.make_customer_id()), constants.FUNCTIONS_ORDER.NewOrder, params
+        return customer_operator, str(self.make_customer_id()), order.NewOrder, params
 
     def generate_payment_params(self) -> tuple[Operator, str, Type, dict]:
         """Return parameters for PAYMENT"""
@@ -99,7 +101,7 @@ class Executor:
             assert params['c_w_id'] != params['w_id'], "Failed to generate W_ID that's not equal to C_W_ID"
             params['c_d_id'] = self.make_district_id()
 
-        return constants.OPERATOR_CUSTOMER, key, constants.FUNCTIONS_CUSTOMER.Payment, params
+        return customer_operator, key, customer.Payment, params
 
     def make_warehouse_id(self) -> int:
         w_id = rand.number(self.scale_parameters.starting_warehouse, self.scale_parameters.ending_warehouse)

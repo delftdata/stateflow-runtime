@@ -10,6 +10,14 @@ from datetime import datetime
 
 from universalis.universalis import Universalis
 
+from workloads.tpcc.functions import item, warehouse, customer, history, order, order_line, new_order, district, stock
+from workloads.tpcc.functions.graph import (
+    item_operator,
+    warehouse_operator,
+    customer_operator,
+    history_operator,
+    order_operator, order_line_operator, new_order_operator, district_operator, stock_operator,
+)
 from workloads.tpcc.util import rand, constants
 from workloads.tpcc.util.key import tuple_to_composite
 from workloads.tpcc.util.scale_parameters import ScaleParameters
@@ -30,7 +38,7 @@ class Loader:
 
     async def execute(self):
         await self.load_items()
-        await asyncio.sleep(1)
+        await asyncio.sleep(0.5)
 
         for w_id in self.w_ids:
             await self.load_warehouse(w_id)
@@ -53,9 +61,9 @@ class Loader:
             key, params = self.generate_item(i_id, original)
             tasks.append(
                 self.universalis.send_kafka_event(
-                    constants.OPERATOR_ITEM,
+                    item_operator,
                     key,
-                    constants.FUNCTIONS_ITEM.Insert,
+                    item.Insert,
                     (key, params)
                 )
             )
@@ -78,9 +86,9 @@ class Loader:
         # WAREHOUSE
         key, params = self.generate_warehouse(w_id)
         await self.universalis.send_kafka_event(
-            constants.OPERATOR_WAREHOUSE,
+            warehouse_operator,
             key,
-            constants.FUNCTIONS_WAREHOUSE.Insert,
+            warehouse.Insert,
             (key, params)
         )
 
@@ -109,9 +117,9 @@ class Loader:
                 key, params = self.generate_customer(w_id, d_id, c_id, bad_credit)
                 c_tasks.append(
                     self.universalis.send_kafka_event(
-                        constants.OPERATOR_CUSTOMER,
+                        customer_operator,
                         key,
-                        constants.FUNCTIONS_CUSTOMER.Insert,
+                        customer.Insert,
                         (key, params)
                     )
                 )
@@ -119,9 +127,9 @@ class Loader:
                 key, params = self.generate_history(w_id, d_id, c_id)
                 h_tasks.append(
                     self.universalis.send_kafka_event(
-                        constants.OPERATOR_HISTORY,
+                        history_operator,
                         key,
-                        constants.FUNCTIONS_HISTORY.Insert,
+                        history.Insert,
                         (key, params)
                     )
                 )
@@ -142,17 +150,17 @@ class Loader:
                 o_ol_cnt = rand.number(constants.MIN_OL_CNT, constants.MAX_OL_CNT)
 
                 # The last new_orders_per_district are new orders
-                new_order = (
+                is_new_order = (
                         (self.scale_parameters.customers_per_district - self.scale_parameters.new_orders_per_district)
                         < o_id
                 )
 
-                key, params = self.generate_order(w_id, d_id, o_id, c_id_permutation[o_id - 1], o_ol_cnt, new_order)
+                key, params = self.generate_order(w_id, d_id, o_id, c_id_permutation[o_id - 1], o_ol_cnt, is_new_order)
                 o_tasks.append(
                     self.universalis.send_kafka_event(
-                        constants.OPERATOR_ORDER,
+                        order_operator,
                         key,
-                        constants.FUNCTIONS_ORDER.Insert,
+                        order.Insert,
                         (key, params)
                     )
                 )
@@ -165,26 +173,26 @@ class Loader:
                         o_id,
                         ol_number,
                         self.scale_parameters.items,
-                        new_order
+                        is_new_order
                     )
 
                     ol_tasks.append(
                         self.universalis.send_kafka_event(
-                            constants.OPERATOR_ORDER_LINE,
+                            order_line_operator,
                             key,
-                            constants.FUNCTIONS_ORDER_LINE.Insert,
+                            order_line.Insert,
                             (key, params)
                         )
                     )
 
                 # This is a new order: make one for it
-                if new_order:
+                if is_new_order:
                     no_key: str = tuple_to_composite((w_id, d_id, o_id))
                     no_tasks.append(
                         self.universalis.send_kafka_event(
-                            constants.OPERATOR_NEW_ORDER,
+                            new_order_operator,
                             no_key,
-                            constants.FUNCTIONS_NEW_ORDER.Insert,
+                            new_order.Insert,
                             (no_key, (w_id, d_id, o_id))
                         )
                     )
@@ -192,22 +200,21 @@ class Loader:
             key, params = self.generate_district(w_id, d_id, d_next_o_id)
 
             await self.universalis.send_kafka_event(
-                constants.OPERATOR_DISTRICT,
+                district_operator,
                 key,
-                constants.FUNCTIONS_DISTRICT.Insert,
+                district.Insert,
                 (key, params)
             )
 
             await asyncio.gather(*c_tasks)
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.5)
             await asyncio.gather(*h_tasks)
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.5)
             await asyncio.gather(*o_tasks)
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.5)
             await asyncio.gather(*ol_tasks)
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.5)
             await asyncio.gather(*no_tasks)
-            await asyncio.sleep(1)
 
         # Select 10% of the stock to be marked "original"
         s_tasks = []
@@ -220,9 +227,9 @@ class Loader:
             key, params = self.generate_stock(w_id, i_id, original)
             s_tasks.append(
                 self.universalis.send_kafka_event(
-                    constants.OPERATOR_STOCK,
+                    stock_operator,
                     key,
-                    constants.FUNCTIONS_STOCK.Insert,
+                    stock.Insert,
                     (key, params)
                 )
             )
@@ -335,7 +342,7 @@ class Loader:
     def generate_stock(self, s_w_id: int, s_i_id: int, original: bool) -> tuple[str, dict[str, str]]:
         key = tuple_to_composite((s_w_id, s_i_id))
 
-        stock = {
+        stock_params = {
             's_quantity': rand.number(constants.MIN_QUANTITY, constants.MAX_QUANTITY),
             's_ytd': 0,
             's_order_cnt': 0,
@@ -345,9 +352,9 @@ class Loader:
         }
 
         for i in range(1, constants.DISTRICTS_PER_WAREHOUSE + 1):
-            stock[f's_dist_{i}'] = rand.a_string(constants.DIST, constants.DIST)
+            stock_params[f's_dist_{i}'] = rand.a_string(constants.DIST, constants.DIST)
 
-        return key, stock
+        return key, stock_params
 
     def generate_address(self, prefix: str = '') -> dict[str, str]:
         """
@@ -386,14 +393,14 @@ class Loader:
         }
 
     @staticmethod
-    def generate_order(o_w_id: int, o_d_id: int, o_id: int, o_c_id: int, o_ol_cnt: int, new_order: bool) -> \
+    def generate_order(o_w_id: int, o_d_id: int, o_id: int, o_c_id: int, o_ol_cnt: int, is_new_order: bool) -> \
             tuple[str, dict[str, int | float | str]]:
         key: str = tuple_to_composite((o_w_id, o_d_id, o_id))
 
         return key, {
             'o_c_id': o_c_id,
             'o_entry_d': datetime.now().strftime("%m/%d/%Y, %H:%M:%S"),
-            'o_carrier_id': constants.NULL_CARRIER_ID if new_order else rand.number(
+            'o_carrier_id': constants.NULL_CARRIER_ID if is_new_order else rand.number(
                 constants.MIN_CARRIER_ID,
                 constants.MAX_CARRIER_ID
             ),

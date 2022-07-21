@@ -3,8 +3,6 @@
 # https://github.com/mongodb-labs/py-tpcc/blob/master/pytpcc/constants.py
 # -----------------------------------------------------------------------
 
-import workloads.tpcc.functions.graph as graph
-
 MONEY_DECIMALS: int = 2
 
 #  Item constants
@@ -110,26 +108,6 @@ TABLENAME_ORDERS = "ORDERS"
 TABLENAME_NEW_ORDER = "NEW_ORDER"
 TABLENAME_ORDER_LINE = "ORDER_LINE"
 TABLENAME_HISTORY = "HISTORY"
-
-FUNCTIONS_CUSTOMER = graph.customer
-FUNCTIONS_DISTRICT = graph.district
-FUNCTIONS_HISTORY = graph.history
-FUNCTIONS_ITEM = graph.item
-FUNCTIONS_NEW_ORDER = graph.new_order
-FUNCTIONS_ORDER = graph.order
-FUNCTIONS_ORDER_LINE = graph.order_line
-FUNCTIONS_STOCK = graph.stock
-FUNCTIONS_WAREHOUSE = graph.warehouse
-
-OPERATOR_CUSTOMER = graph.customer_operator
-OPERATOR_DISTRICT = graph.district_operator
-OPERATOR_HISTORY = graph.history_operator
-OPERATOR_ITEM = graph.item_operator
-OPERATOR_NEW_ORDER = graph.new_order_operator
-OPERATOR_ORDER = graph.order_operator
-OPERATOR_ORDER_LINE = graph.order_line_operator
-OPERATOR_STOCK = graph.stock_operator
-OPERATOR_WAREHOUSE = graph.warehouse_operator
 
 ALL_TABLES = [
     TABLENAME_ITEM,

@@ -3,6 +3,7 @@ import asyncio
 from universalis.common.stateflow_ingress import IngressTypes
 from universalis.universalis import Universalis
 
+import workloads
 from common.logging import logging
 from workloads.tpcc.functions.graph import g
 from workloads.tpcc.runtime.executor import Executor
@@ -35,7 +36,7 @@ class TpccBenchmark:
         self.loader = Loader(self.scale_parameters, [1], self.universalis)
         self.executor = Executor(self.scale_parameters, self.universalis)
 
-        await self.universalis.submit(g)
+        await self.universalis.submit(g, (workloads,))
         await asyncio.sleep(2)
         logging.info('Graph submitted')
 
