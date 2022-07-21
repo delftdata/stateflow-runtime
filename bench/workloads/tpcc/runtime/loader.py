@@ -63,7 +63,7 @@ class Loader:
                 self.universalis.send_kafka_event(
                     item_operator,
                     key,
-                    item.Insert,
+                    item.InsertItem,
                     (key, params)
                 )
             )
@@ -88,7 +88,7 @@ class Loader:
         await self.universalis.send_kafka_event(
             warehouse_operator,
             key,
-            warehouse.Insert,
+            warehouse.InsertWarehouse,
             (key, params)
         )
 
@@ -119,7 +119,7 @@ class Loader:
                     self.universalis.send_kafka_event(
                         customer_operator,
                         key,
-                        customer.Insert,
+                        customer.InsertCustomer,
                         (key, params)
                     )
                 )
@@ -129,7 +129,7 @@ class Loader:
                     self.universalis.send_kafka_event(
                         history_operator,
                         key,
-                        history.Insert,
+                        history.InsertHistory,
                         (key, params)
                     )
                 )
@@ -160,7 +160,7 @@ class Loader:
                     self.universalis.send_kafka_event(
                         order_operator,
                         key,
-                        order.Insert,
+                        order.InsertOrder,
                         (key, params)
                     )
                 )
@@ -180,7 +180,7 @@ class Loader:
                         self.universalis.send_kafka_event(
                             order_line_operator,
                             key,
-                            order_line.Insert,
+                            order_line.InsertOrderLine,
                             (key, params)
                         )
                     )
@@ -192,7 +192,7 @@ class Loader:
                         self.universalis.send_kafka_event(
                             new_order_operator,
                             no_key,
-                            new_order.Insert,
+                            new_order.InsertNewOrder,
                             (no_key, (w_id, d_id, o_id))
                         )
                     )
@@ -202,7 +202,7 @@ class Loader:
             await self.universalis.send_kafka_event(
                 district_operator,
                 key,
-                district.Insert,
+                district.InsertDistrict,
                 (key, params)
             )
 
@@ -229,7 +229,7 @@ class Loader:
                 self.universalis.send_kafka_event(
                     stock_operator,
                     key,
-                    stock.Insert,
+                    stock.InsertStock,
                     (key, params)
                 )
             )

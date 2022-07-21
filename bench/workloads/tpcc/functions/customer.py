@@ -1,4 +1,3 @@
-from universalis.common.logging import logging
 from universalis.common.stateful_function import StatefulFunction
 
 from workloads.tpcc.util import constants
@@ -9,13 +8,13 @@ class InvalidItemId(Exception):
     pass
 
 
-class Insert(StatefulFunction):
+class InsertCustomer(StatefulFunction):
     async def run(self, key: str, customer: dict[str, int | float | str]):
         await self.put(key, customer)
         return key, customer
 
 
-class Get(StatefulFunction):
+class GetCustomer(StatefulFunction):
     async def run(self, key: str):
         customer = await self.get(key)
         return customer
@@ -23,7 +22,6 @@ class Get(StatefulFunction):
 
 class Payment(StatefulFunction):
     async def run(self, key: str, params: dict):
-        logging.warning('Running payment')
         # Initialize transaction properties
         w_id: str = params['w_id']
         d_id: str = params['d_id']
@@ -32,13 +30,11 @@ class Payment(StatefulFunction):
         c_d_id: str = params['c_d_id']
         c_last: str = params['c_last']
         h_date: str = params['h_date']
-        logging.warning('Initiated parameters')
 
         # --------------------------
         # Get Customer By ID Query
         # --------------------------
         customer_data = await self.get(key)
-        logging.warning(f'Customer data = {customer_data}')
 
         c_balance: float = float(customer_data['c_balance']) - h_amount
         c_ytd_payment: float = float(customer_data['c_ytd_payment']) + h_amount
@@ -51,11 +47,10 @@ class Payment(StatefulFunction):
         warehouse_key = str(w_id)
         warehouse_data: dict = await self.call_remote_function_request_response(
             'warehouse',
-            'Get',
+            'GetWarehouse',
             warehouse_key,
             (warehouse_key,)
         )
-        logging.warning(f'Warehouse data = {warehouse_data}')
 
         # --------------------
         # Get District Query
@@ -63,11 +58,10 @@ class Payment(StatefulFunction):
         district_key = tuple_to_composite((w_id, d_id))
         district_data: dict = await self.call_remote_function_request_response(
             'district',
-            'Get',
+            'GetDistrict',
             district_key,
             (district_key,)
         )
-        logging.warning(f'District data = {district_data}')
 
         # --------------------------------
         # Update Warehouse Balance Query
@@ -75,18 +69,21 @@ class Payment(StatefulFunction):
         warehouse_data['w_ytd'] = float(warehouse_data['w_ytd']) + h_amount
         await self.call_remote_function_no_response(
             'warehouse',
-            'Insert',
+            'InsertWarehouse',
             warehouse_key,
             (warehouse_key, warehouse_data)
         )
-        logging.warning(f'Warehouse data updated')
 
         # -------------------------------
         # Update District Balance Query
         # -------------------------------
         district_data['d_ytd'] = float(district_data['d_ytd']) + h_amount
-        await self.call_remote_function_no_response('district', 'Insert', district_key, (district_key, district_data))
-        logging.warning(f'District data updated')
+        await self.call_remote_function_no_response(
+            'district',
+            'InsertDistrict',
+            district_key,
+            (district_key, district_data)
+        )
 
         if customer_data['c_credit'] == constants.BAD_CREDIT:
             # ----------------------------------
@@ -110,7 +107,6 @@ class Payment(StatefulFunction):
             'c_data': c_data,
         }
         await self.put(key, customer_data)
-        logging.warning(f'Customer data updated')
 
         # Concatenate w_name, four spaces, d_name
         h_data = "%s    %s" % (warehouse_data['w_name'], district_data['d_name'])
@@ -129,8 +125,13 @@ class Payment(StatefulFunction):
             'h_amount': h_amount,
             'h_data': h_data,
         }
-        await self.call_remote_function_no_response('history', 'Insert', history_key, (history_key, history_params))
-        logging.warning(f'History data updated')
+        
+        await self.call_remote_function_no_response(
+            'history',
+            'InsertHistory',
+            history_key,
+            (history_key, history_params)
+        )
 
         # TPC-C 2.5.3.3: Must display the following fields:
         # W_ID, D_ID, C_ID, C_D_ID, C_W_ID, W_STREET_1, W_STREET_2, W_CITY,

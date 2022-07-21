@@ -2,6 +2,7 @@
 # Adapted from MongoDB-labs py-tpcc package:
 # https://github.com/mongodb-labs/py-tpcc/blob/master/pytpcc/runtime/executor.py
 # -----------------------------------------------------------------------
+import asyncio
 from datetime import datetime
 from typing import Type
 
@@ -21,13 +22,18 @@ class Executor:
         self.universalis: Universalis = universalis
 
     async def execute_transaction(self):
+        tasks = []
         # x = rand.number(1, 100)
         #
         # if x <= 50:
         #     operator, key, fun, params = self.generate_payment_params()
         # else:
-        operator, key, fun, params = self.generate_payment_params()
-        await self.universalis.send_kafka_event(customer_operator, key, fun, (key, params,))
+        for i in range(100):
+            operator, key, fun, params = self.generate_payment_params()
+            tasks.append(self.universalis.send_kafka_event(customer_operator, key, fun, (key, params,)))
+
+        responses = await asyncio.gather(*tasks)
+        return responses
 
     def generate_new_order_params(self) -> tuple[Operator, str, Type, dict]:
         """Return parameters for NEW_ORDER"""

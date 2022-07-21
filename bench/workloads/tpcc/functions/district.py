@@ -8,13 +8,13 @@ from workloads.tpcc.util import constants
 from workloads.tpcc.util.key import tuple_to_composite
 
 
-class Insert(StatefulFunction):
+class InsertDistrict(StatefulFunction):
     async def run(self, key: str, district: dict[str, int | float | str]):
         await self.put(key, district)
         return key, district
 
 
-class Get(StatefulFunction):
+class GetDistrict(StatefulFunction):
     async def run(self, key: str):
         district = await self.get(key)
         return district
@@ -99,7 +99,9 @@ class NewOrder(StatefulFunction):
             'no_d_id': params['d_id'],
             'no_w_id': params['w_id'],
         }
-        tasks.append(self.call_remote_async(new_order.Insert, new_order_key, (new_order_key, new_order_params,)))
+        tasks.append(
+            self.call_remote_async(new_order.InsertNewOrder, new_order_key, (new_order_key, new_order_params,))
+            )
 
         # -------------------------------
         # Insert Order Item Information
@@ -132,7 +134,7 @@ class NewOrder(StatefulFunction):
             # Get Stock Information Query
             # -----------------------------
             stock_key.append(tuple_to_composite(([ol_supply_w_id][k], ol_i_id[k])))
-            stock_tasks.append(self.call_remote_async(stock.Get, stock_key, (stock_key,)))
+            stock_tasks.append(self.call_remote_async(stock.GetStock, stock_key, (stock_key,)))
 
         stock_info = await asyncio.gather(*stock_tasks)
         for k, v in enumerate(stock_info):
@@ -163,7 +165,7 @@ class NewOrder(StatefulFunction):
                 's_remote_cnt': s_remote_cnt,
                 's_data': s_data
             }
-            tasks.append(self.call_remote_async(stock.Insert, stock_key[k], (stock_key[k], stock_params)))
+            tasks.append(self.call_remote_async(stock.InsertStock, stock_key[k], (stock_key[k], stock_params)))
 
             if i_data[k].find(constants.ORIGINAL_STRING) != -1 and s_data.find(constants.ORIGINAL_STRING) != -1:
                 brand_generic = 'B'
@@ -186,7 +188,9 @@ class NewOrder(StatefulFunction):
                 'ol_amount': ol_amount,
                 'ol_dist_info': s_dist_xx
             }
-            tasks.append(self.call_remote_async(order_line.Insert, order_line_key, (order_line_key, order_line_params)))
+            tasks.append(
+                self.call_remote_async(order_line.InsertOrderLine, order_line_key, (order_line_key, order_line_params))
+                )
 
             item_data.append((i_name, s_quantity, brand_generic, i_price, ol_amount))
 
