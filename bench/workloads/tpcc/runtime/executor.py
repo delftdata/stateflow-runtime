@@ -28,9 +28,9 @@ class Executor:
         # if x <= 50:
         #     operator, key, fun, params = self.generate_payment_params()
         # else:
-        for i in range(100):
-            operator, key, fun, params = self.generate_payment_params()
-            tasks.append(self.universalis.send_kafka_event(customer_operator, key, fun, (key, params,)))
+        for i in range(1):
+            operator, key, fun, params = self.generate_new_order_params()
+            tasks.append(self.universalis.send_kafka_event(district_operator, key, fun, (key, params,)))
 
         responses = await asyncio.gather(*tasks)
         return responses

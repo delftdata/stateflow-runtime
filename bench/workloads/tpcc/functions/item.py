@@ -7,7 +7,7 @@ class InsertItem(StatefulFunction):
         return key, item
 
 
-class GetInsert(StatefulFunction):
+class GetItem(StatefulFunction):
     async def run(self, key: str):
         item = await self.get(key)
         return item

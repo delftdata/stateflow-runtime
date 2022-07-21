@@ -1,9 +1,6 @@
-import asyncio
-
 from universalis.common.logging import logging
 from universalis.common.stateful_function import StatefulFunction
 
-from workloads.tpcc.functions import order_line, stock, new_order
 from workloads.tpcc.util import constants
 from workloads.tpcc.util.key import tuple_to_composite
 
@@ -21,9 +18,8 @@ class GetDistrict(StatefulFunction):
 
 
 class NewOrder(StatefulFunction):
-    async def run(self, params: dict):
+    async def run(self, key: str, params: dict):
         all_local = True
-        tasks = []
 
         # Validate transaction parameters
         assert len(params['i_ids']) > 0
@@ -33,28 +29,35 @@ class NewOrder(StatefulFunction):
         items = []
         for k, v in enumerate(params['i_ids']):
             all_local = all_local and v == params['w_id']
-            logging.warning(f'Getting {v}')
-            data = await self.call_remote_function_request_response('item', 'Get', v, (v,))
+            logging.warning(f'Getting i_id:{v}')
+            data = await self.call_remote_function_request_response('item', 'GetItem', v, (v,))
             logging.warning(f'Got {data}')
             items.append(data)
 
+        return items
         assert len(items) == len(params['i_ids'])
         logging.warning(items)
-        tasks = []
 
         # --------------------
         # Get Customer, Warehouse and District information
         # --------------------
         warehouse_key = params['w_id']
-        district_key = tuple_to_composite((params['w_id'], params['d_id']))
         customer_key = tuple_to_composite((params['w_id'], params['d_id'], params['c_id']))
 
-        tasks.append(self.call_remote_function_request_response('warehouse', 'Get', warehouse_key, (warehouse_key,)))
-        tasks.append(self.call_remote_function_request_response('district', 'Get', district_key, (district_key,)))
-        tasks.append(self.call_remote_function_request_response('customer', 'Get', customer_key, (customer_key,)))
+        warehouse = await self.call_remote_function_request_response(
+            'warehouse',
+            'GetWarehouse',
+            warehouse_key,
+            (warehouse_key,)
+        )
 
-        [warehouse, district, customer] = await asyncio.gather(*tasks)
-        tasks = []
+        district = await self.get(key)
+        customer = await self.call_remote_function_request_response(
+            'customer',
+            'GetCustomer',
+            customer_key,
+            (customer_key,)
+        )
 
         w_tax = float(warehouse['w_tax'])
         d_tax = float(district['d_tax'])
@@ -89,7 +92,7 @@ class NewOrder(StatefulFunction):
             'o_ol_cnt': ol_cnt,
             'o_all_local': all_local
         }
-        tasks.append(self.call_remote_function_no_response('order', 'Insert', order_key, (order_key, order_params,)))
+        await self.call_remote_function_no_response('order', 'InsertOrder', order_key, (order_key, order_params,))
 
         # ------------------------
         # Create New Order Query
@@ -99,9 +102,12 @@ class NewOrder(StatefulFunction):
             'no_d_id': params['d_id'],
             'no_w_id': params['w_id'],
         }
-        tasks.append(
-            self.call_remote_async(new_order.InsertNewOrder, new_order_key, (new_order_key, new_order_params,))
-            )
+        await self.call_remote_function_no_response(
+            'new_order',
+            'InsertNewOrder',
+            new_order_key,
+            (new_order_key, new_order_params,)
+        )
 
         # -------------------------------
         # Insert Order Item Information
@@ -116,7 +122,7 @@ class NewOrder(StatefulFunction):
         i_name = []
         i_price = []
         i_data = []
-        stock_tasks = []
+        stock_info = []
         stock_key = []
 
         for k, v in enumerate(params['i_ids']):
@@ -134,9 +140,8 @@ class NewOrder(StatefulFunction):
             # Get Stock Information Query
             # -----------------------------
             stock_key.append(tuple_to_composite(([ol_supply_w_id][k], ol_i_id[k])))
-            stock_tasks.append(self.call_remote_async(stock.GetStock, stock_key, (stock_key,)))
+            stock_info.append(await self.call_remote_function_no_response('stock', 'GetStock', stock_key, (stock_key,)))
 
-        stock_info = await asyncio.gather(*stock_tasks)
         for k, v in enumerate(stock_info):
             s_quantity = float(v['s_quantity'])
             s_ytd = float(v['s_ytd'])
@@ -165,7 +170,12 @@ class NewOrder(StatefulFunction):
                 's_remote_cnt': s_remote_cnt,
                 's_data': s_data
             }
-            tasks.append(self.call_remote_async(stock.InsertStock, stock_key[k], (stock_key[k], stock_params)))
+            await self.call_remote_function_no_response(
+                'stock',
+                'InsertStock',
+                stock_key[k],
+                (stock_key[k], stock_params)
+            )
 
             if i_data[k].find(constants.ORIGINAL_STRING) != -1 and s_data.find(constants.ORIGINAL_STRING) != -1:
                 brand_generic = 'B'
@@ -188,14 +198,16 @@ class NewOrder(StatefulFunction):
                 'ol_amount': ol_amount,
                 'ol_dist_info': s_dist_xx
             }
-            tasks.append(
-                self.call_remote_async(order_line.InsertOrderLine, order_line_key, (order_line_key, order_line_params))
-                )
 
+            await self.call_remote_function_no_response(
+                'order_line',
+                'InsertOrderLine',
+                order_line_key,
+                (order_line_key, order_line_params)
+            )
             item_data.append((i_name, s_quantity, brand_generic, i_price, ol_amount))
 
         # Commit all updates
-        await asyncio.gather(*tasks)
 
         # Adjust the total for the discount
         total *= (1 - c_discount) * (1 + w_tax + d_tax)
