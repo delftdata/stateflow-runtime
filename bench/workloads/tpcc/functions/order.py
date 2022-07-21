@@ -1,5 +1,6 @@
 import asyncio
 
+from universalis.common.logging import logging
 from universalis.common.stateful_function import StatefulFunction
 
 from workloads.tpcc.functions import order_line, stock, new_order
@@ -29,12 +30,16 @@ class NewOrder(StatefulFunction):
         assert len(params['i_ids']) == len(params['i_w_ids'])
         assert len(params['i_ids']) == len(params['i_qtys'])
 
+        items = []
         for k, v in enumerate(params['i_ids']):
             all_local = all_local and v == params['w_id']
-            tasks.append(await self.call_remote_function_request_response('item', 'Get', v, (v,)))
+            logging.warning(f'Getting {v}')
+            data = await self.call_remote_function_request_response('item', 'Get', v, (v,))
+            logging.warning(f'Got {data}')
+            items.append(data)
 
-        items = await asyncio.gather(*tasks)
         assert len(items) == len(params['i_ids'])
+        logging.warning(items)
         tasks = []
 
         # --------------------
@@ -84,7 +89,7 @@ class NewOrder(StatefulFunction):
             'o_ol_cnt': ol_cnt,
             'o_all_local': all_local
         }
-        tasks.append(self.call_remote_async(Insert, order_key, (order_key, order_params,)))
+        tasks.append(self.call(Insert, order_key, (order_key, order_params,)))
 
         # ------------------------
         # Create New Order Query

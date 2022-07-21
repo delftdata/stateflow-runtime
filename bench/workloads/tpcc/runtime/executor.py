@@ -9,7 +9,7 @@ from universalis.common.operator import Operator
 from universalis.universalis import Universalis
 
 from workloads.tpcc.functions import order, customer
-from workloads.tpcc.functions.graph import order_operator, customer_operator
+from workloads.tpcc.functions.graph import customer_operator
 from workloads.tpcc.util import rand, constants
 from workloads.tpcc.util.scale_parameters import ScaleParameters
 
@@ -25,8 +25,8 @@ class Executor:
         # if x <= 50:
         #     operator, key, fun, params = self.generate_payment_params()
         # else:
-        operator, key, fun, params = self.generate_new_order_params()
-        await self.universalis.send_kafka_event(order_operator, key, fun, (params,))
+        operator, key, fun, params = self.generate_payment_params()
+        await self.universalis.send_kafka_event(customer_operator, key, fun, (key, params,))
 
     def generate_new_order_params(self) -> tuple[Operator, str, Type, dict]:
         """Return parameters for NEW_ORDER"""
@@ -44,13 +44,13 @@ class Executor:
         ol_cnt = rand.number(constants.MIN_OL_CNT, constants.MAX_OL_CNT)
 
         for i in range(0, ol_cnt):
-            if rollback and i + 1 == ol_cnt:
-                i_ids.append(self.scale_parameters.items + 1)
-            else:
+            # if rollback and i + 1 == ol_cnt:
+            #     i_ids.append(self.scale_parameters.items + 1)
+            # else:
+            i_id = self.make_item_id()
+            while i_id in i_ids:
                 i_id = self.make_item_id()
-                while i_id in i_ids:
-                    i_id = self.make_item_id()
-                i_ids.append(i_id)
+            i_ids.append(i_id)
 
             # 1% of items are from a remote warehouse
             remote = (rand.number(1, 100) == 1)

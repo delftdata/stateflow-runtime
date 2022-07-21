@@ -1,8 +1,6 @@
-import asyncio
-
+from universalis.common.logging import logging
 from universalis.common.stateful_function import StatefulFunction
 
-from workloads.tpcc.functions import warehouse, district, history
 from workloads.tpcc.util import constants
 from workloads.tpcc.util.key import tuple_to_composite
 
@@ -17,36 +15,42 @@ class Insert(StatefulFunction):
         return key, customer
 
 
+class Get(StatefulFunction):
+    async def run(self, key: str):
+        customer = await self.get(key)
+        return customer
+
+
 class Payment(StatefulFunction):
     async def run(self, key: str, params: dict):
+        logging.warning('Running payment')
         # Initialize transaction properties
-        w_id: int = params['w_id']
-        d_id: int = params['d_id']
+        w_id: str = params['w_id']
+        d_id: str = params['d_id']
         h_amount: float = params['h_amount']
-        c_w_id: int = params['c_w_id']
-        c_d_id: int = params['c_d_id']
-        c_id: int = params['c_id']
+        c_w_id: str = params['c_w_id']
+        c_d_id: str = params['c_d_id']
+        c_id: str = key
         c_last: str = params['c_last']
         h_date: str = params['h_date']
+        logging.warning('Initiated parameters')
 
         # --------------------------
         # Get Customer By ID Query
         # --------------------------
         customer_key = tuple_to_composite((w_id, d_id, c_id))
-        customer: dict = await self.call_remote_function_request_response(
+        customer_data = await self.call_remote_function_request_response(
             'customer',
             'Get',
             customer_key,
             (customer_key,)
         )
+        logging.warning(f'Customer data = {customer_key}')
 
-        assert len(customer) > 0
-        assert c_id is not None
-
-        c_balance: float = float(customer['c_balance']) - h_amount
-        c_ytd_payment: float = float(customer['c_ytd_payment']) + h_amount
-        c_payment_cnt: float = float(customer['c_payment_cnt']) + 1
-        c_data: str = customer['c_data']
+        c_balance: float = float(customer_data['c_balance']) - h_amount
+        c_ytd_payment: float = float(customer_data['c_ytd_payment']) + h_amount
+        c_payment_cnt: float = float(customer_data['c_payment_cnt']) + 1
+        c_data: str = customer_data['c_data']
 
         # ---------------------
         # Get Warehouse Query
@@ -58,6 +62,7 @@ class Payment(StatefulFunction):
             warehouse_key,
             (warehouse_key,)
         )
+        logging.warning(f'Warehouse data = {warehouse_data}')
 
         # --------------------
         # Get District Query
@@ -69,22 +74,26 @@ class Payment(StatefulFunction):
             district_key,
             (district_key,)
         )
-
-        tasks = []
+        logging.warning(f'District data = {warehouse_data}')
 
         # --------------------------------
         # Update Warehouse Balance Query
         # --------------------------------
         warehouse_data['w_ytd'] = float(warehouse_data['w_ytd']) + h_amount
-        tasks.append(self.call_remote_async(warehouse.Insert, warehouse_key, (warehouse_key, warehouse_data,)))
+        await self.call_remote_function_no_response(
+            'warehouse',
+            'Insert',
+            warehouse_key,
+            (warehouse_key, warehouse_data)
+        )
 
         # -------------------------------
         # Update District Balance Query
         # -------------------------------
         district_data['w_ytd'] = float(district_data['w_ytd']) + h_amount
-        tasks.append(self.call_remote_async(district.Insert, district_key, (district_key, district_data,)))
+        await self.call_remote_function_no_response('district', 'Insert', district_key, (district_key, district_data))
 
-        if customer['c_credit'] == constants.BAD_CREDIT:
+        if customer_data['c_credit'] == constants.BAD_CREDIT:
             # ----------------------------------
             # Update Bad Credit Customer Query
             # ----------------------------------
@@ -105,7 +114,7 @@ class Payment(StatefulFunction):
             'c_payment_cnt': c_payment_cnt,
             'c_data': c_data,
         }
-        tasks.append(self.call_remote_async(Insert, customer_key, (customer_key, customer_data)))
+        await self.call_remote_function_no_response('customer', 'Insert', customer_key, (customer_key, customer_data))
 
         # Concatenate w_name, four spaces, d_name
         h_data = "%s    %s" % (warehouse_data['w_name'], district_data['d_name'])
@@ -124,10 +133,7 @@ class Payment(StatefulFunction):
             'h_amount': h_amount,
             'h_data': h_data,
         }
-        tasks.append(self.call_remote_async(history.Insert, history_key, (history_key, history_params)))
-
-        # Commit updates
-        await asyncio.gather(*tasks)
+        await self.call_remote_function_no_response('history', 'Insert', history_key, (history_key, history_params))
 
         # TPC-C 2.5.3.3: Must display the following fields:
         # W_ID, D_ID, C_ID, C_D_ID, C_W_ID, W_STREET_1, W_STREET_2, W_CITY,
@@ -138,4 +144,4 @@ class Payment(StatefulFunction):
         # (only if C_CREDIT = "BC"), H_AMOUNT, and H_DATE.
 
         # Hand back all the warehouse, district, and customer data
-        return [warehouse, district, customer]
+        return warehouse_data, district_data, customer_data

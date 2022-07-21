@@ -37,13 +37,14 @@ class TpccBenchmark:
         self.executor = Executor(self.scale_parameters, self.universalis)
 
         await self.universalis.submit(g, (workloads,))
-        await asyncio.sleep(2)
         logging.info('Graph submitted')
 
     async def insert_records(self):
+        await asyncio.sleep(2)
         await self.loader.execute()
 
     async def run_transaction_mix(self):
+        await asyncio.sleep(2)
         await self.executor.execute_transaction()
 
     async def cleanup(self):
