@@ -247,7 +247,5 @@ class NewOrder(StatefulFunction):
 
         # Pack up values the client is missing (see TPC-C 2.4.3.5)
         misc = w_tax, d_tax, d_next_o_id, total
-        logging.warning(customer_data)
-        logging.warning(misc)
-        logging.warning(item_data)
+
         return (customer_data,) + misc + (item_data,)
