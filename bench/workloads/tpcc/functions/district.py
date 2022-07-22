@@ -30,7 +30,7 @@ class NewOrder(StatefulFunction):
         for k, v in enumerate(params['i_ids']):
             all_local = all_local and v == params['w_id']
             logging.warning(f'Getting i_id:{v}')
-            data = await self.call_remote_function_request_response('item', 'GetItem', v, (v,))
+            data = await self.call_remote_function_request_response('item', 'GetItem', str(v), (str(v),))
             logging.warning(f'Got {data}')
             items.append(data)
 
