@@ -43,7 +43,7 @@ class TpccBenchmark:
         await self.loader.execute()
 
     async def run_transaction_mix(self):
-        await self.executor.execute_transactions()
+        responses = await self.executor.execute_transactions(10)
 
     async def cleanup(self):
         await self.universalis.close()

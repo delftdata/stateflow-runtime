@@ -3,12 +3,14 @@
 # https://github.com/mongodb-labs/py-tpcc/blob/master/pytpcc/runtime/executor.py
 # -----------------------------------------------------------------------
 import asyncio
+import time
 from datetime import datetime
 from typing import Type
 
 from universalis.common.operator import Operator
 from universalis.universalis import Universalis
 
+from common.logging import logging
 from workloads.tpcc.functions import customer, district
 from workloads.tpcc.functions.graph import customer_operator, district_operator
 from workloads.tpcc.util import rand, constants
@@ -17,22 +19,37 @@ from workloads.tpcc.util.scale_parameters import ScaleParameters
 
 
 class Executor:
-    def __init__(self, scale_parameters: ScaleParameters, universalis: Universalis):
+    def __init__(self, scale_parameters: ScaleParameters, universalis: Universalis, batch_size: int = 10000):
+        self.batch_size = batch_size
         self.scale_parameters: ScaleParameters = scale_parameters
         self.universalis: Universalis = universalis
 
-    async def execute_transactions(self):
+    async def execute_transactions(self, duration: float):
         tasks = []
-        # x = rand.number(1, 100)
-        #
-        # if x <= 50:
-        #     operator, key, fun, params = self.generate_payment_params()
-        # else:
-        for i in range(1):
-            operator, key, fun, params = self.generate_new_order_params()
-            tasks.append(self.universalis.send_kafka_event(district_operator, key, fun, (key, params,)))
+        start = time.time()
+        responses = []
+        fun_cnts: dict = {district.NewOrder: 0, customer.Payment: 0}
 
-        responses = await asyncio.gather(*tasks)
+        while (time.time() - start) <= duration:
+            choice = rand.number(1, 100)
+
+            if choice <= 50:
+                operator, key, fun, params = self.generate_payment_params()
+                fun_cnts[fun] += 1
+            else:
+                operator, key, fun, params = self.generate_new_order_params()
+                fun_cnts[fun] += 1
+
+            tasks.append(self.universalis.send_kafka_event(operator, key, fun, (key, params,)))
+
+            if len(tasks) == self.batch_size:
+                responses.append(await asyncio.gather(*tasks))
+                tasks = []
+
+        if len(tasks) > 0:
+            responses.append(await asyncio.gather(*tasks))
+
+        logging.info(fun_cnts)
         return responses
 
     def generate_new_order_params(self) -> tuple[Operator, str, Type, dict]:
