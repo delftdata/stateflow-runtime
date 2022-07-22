@@ -104,6 +104,7 @@ class NewOrder(StatefulFunction):
             'o_ol_cnt': ol_cnt,
             'o_all_local': all_local
         }
+        logging.warning(f'Inserting order: {order_params}')
         await self.call_remote_function_no_response('order', 'InsertOrder', order_key, (order_key, order_params,))
         logging.warning(f'Inserted order')
 
@@ -115,6 +116,8 @@ class NewOrder(StatefulFunction):
             'no_d_id': d_id,
             'no_w_id': w_id,
         }
+
+        logging.warning(f'Inserting new order: {new_order_params}')
         await self.call_remote_function_no_response(
             'new_order',
             'InsertNewOrder',
@@ -137,15 +140,15 @@ class NewOrder(StatefulFunction):
         i_price = []
         i_data = []
         stock_info = []
-        stock_key = []
+        stock_keys = []
 
-        for key, value in enumerate(i_ids):
-            ol_number.append(key + 1)
-            ol_supply_w_id.append(i_w_ids[key])
-            ol_i_id.append(i_ids[key])
-            ol_quantity.append(i_qtys[key])
+        for k, v in enumerate(i_ids):
+            ol_number.append(k + 1)
+            ol_supply_w_id.append(i_w_ids[k])
+            ol_i_id.append(i_ids[k])
+            ol_quantity.append(i_qtys[k])
 
-            item_info = items[key]
+            item_info = items[k]
             i_name.append(item_info['i_name'])
             i_data.append(item_info['i_data'])
             i_price.append(float(item_info['i_price']))
@@ -153,28 +156,39 @@ class NewOrder(StatefulFunction):
             # -----------------------------
             # Get Stock Information Query
             # -----------------------------
-            stock_key.append(tuple_to_composite(([ol_supply_w_id][key], ol_i_id[key])))
-            stock_info.append(await self.call_remote_function_no_response('stock', 'GetStock', stock_key, (stock_key,)))
+            stock_key = tuple_to_composite((ol_supply_w_id[k], ol_i_id[k]))
+            stock_keys.append(stock_key)
 
-        for key, value in enumerate(stock_info):
-            s_quantity = float(value['s_quantity'])
-            s_ytd = float(value['s_ytd'])
-            s_order_cnt = float(value['s_order_cnt'])
-            s_remote_cnt = float(value['s_remote_cnt'])
-            s_data = value['s_data']
-            s_dist_xx = value['S_DIST_' + str(d_id)]
+            logging.warning(f'Getting stock info: {stock_key}')
+            stock_info.append(
+                await self.call_remote_function_request_response(
+                    'stock',
+                    'GetStock',
+                    stock_key,
+                    (stock_key,)
+                )
+            )
+            logging.warning(f'Got stock info: {stock_info[k]}')
+
+        for k, v in enumerate(stock_info):
+            s_quantity = float(v['s_quantity'])
+            s_ytd = float(v['s_ytd'])
+            s_order_cnt = float(v['s_order_cnt'])
+            s_remote_cnt = float(v['s_remote_cnt'])
+            s_data = v['s_data']
+            s_dist_xx = v['s_dist_' + str(d_id)]
 
             # --------------------
             # Update Stock Query
             # --------------------
-            s_ytd += ol_quantity[key]
-            if s_quantity >= ol_quantity[key] + 10:
-                s_quantity = s_quantity - ol_quantity[key]
+            s_ytd += ol_quantity[k]
+            if s_quantity >= ol_quantity[k] + 10:
+                s_quantity = s_quantity - ol_quantity[k]
             else:
-                s_quantity = s_quantity + 91 - ol_quantity[key]
+                s_quantity = s_quantity + 91 - ol_quantity[k]
             s_order_cnt += 1
 
-            if ol_supply_w_id[key] != w_id:
+            if ol_supply_w_id[k] != w_id:
                 s_remote_cnt += 1
 
             stock_params = {
@@ -182,22 +196,26 @@ class NewOrder(StatefulFunction):
                 's_ytd': s_ytd,
                 's_order_cnt': s_order_cnt,
                 's_remote_cnt': s_remote_cnt,
-                's_data': s_data
+                's_data': s_data,
+                's_dist_' + str(d_id): s_dist_xx
             }
+
+            logging.warning(f'Inserting stock: {stock_params}')
             await self.call_remote_function_no_response(
                 'stock',
                 'InsertStock',
-                stock_key[key],
-                (stock_key[key], stock_params)
+                stock_keys[k],
+                (stock_keys[k], stock_params)
             )
+            logging.warning(f'Inserted stock: {stock_params}')
 
-            if i_data[key].find(constants.ORIGINAL_STRING) != -1 and s_data.find(constants.ORIGINAL_STRING) != -1:
+            if i_data[k].find(constants.ORIGINAL_STRING) != -1 and s_data.find(constants.ORIGINAL_STRING) != -1:
                 brand_generic = 'B'
             else:
                 brand_generic = 'G'
 
             # Transaction profile states to use "ol_quantity * i_price"
-            ol_amount = ol_quantity[key] * i_price[key]
+            ol_amount = ol_quantity[k] * i_price[k]
             total += ol_amount
 
             # -------------------------
@@ -205,20 +223,23 @@ class NewOrder(StatefulFunction):
             # -------------------------
             order_line_key = tuple_to_composite((w_id, d_id, d_next_o_id, ol_number))
             order_line_params = {
-                'ol_i_id': ol_i_id[key],
-                'ol_supply_w_id': ol_supply_w_id[key],
+                'ol_i_id': ol_i_id[k],
+                'ol_supply_w_id': ol_supply_w_id[k],
                 'ol_delivery_d': o_entry_d,
-                'ol_quantity': ol_quantity[key],
+                'ol_quantity': ol_quantity[k],
                 'ol_amount': ol_amount,
                 'ol_dist_info': s_dist_xx
             }
 
+            logging.warning(f'Inserting order line: {order_line_params}')
             await self.call_remote_function_no_response(
                 'order_line',
                 'InsertOrderLine',
                 order_line_key,
                 (order_line_key, order_line_params)
             )
+            logging.warning(f'Inserted order line')
+
             item_data.append((i_name, s_quantity, brand_generic, i_price, ol_amount))
 
         # Adjust the total for the discount
@@ -226,5 +247,7 @@ class NewOrder(StatefulFunction):
 
         # Pack up values the client is missing (see TPC-C 2.4.3.5)
         misc = w_tax, d_tax, d_next_o_id, total
-
+        logging.warning(customer_data)
+        logging.warning(misc)
+        logging.warning(item_data)
         return (customer_data,) + misc + (item_data,)
