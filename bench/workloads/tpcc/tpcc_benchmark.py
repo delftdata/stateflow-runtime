@@ -40,23 +40,27 @@ class TpccBenchmark:
         logging.info('Graph submitted')
 
     async def insert_records(self):
-        await asyncio.sleep(2)
         await self.loader.execute()
 
     async def run_transaction_mix(self):
-        await asyncio.sleep(2)
         await self.executor.execute_transaction()
 
     async def cleanup(self):
         await self.universalis.close()
 
-    def generate_request_data(self, responses):
-        pass
-
     async def run(self):
+        logging.info('Initialising...')
         await self.initialise()
+        logging.info('Initialised')
+        await asyncio.sleep(2)
+        logging.info('Inserting records...')
         await self.insert_records()
-        logging.info('Records inserted')
+        logging.info('Finished inserting')
+        await asyncio.sleep(2)
+        logging.info('Running transaction mix...')
         await self.run_transaction_mix()
+        logging.info('Finished running transaction mix')
+        await asyncio.sleep(2)
+        logging.info('Cleaning up...')
         await self.cleanup()
-        # self.generate_request_data(responses)
+        logging.info('Cleaned up')
