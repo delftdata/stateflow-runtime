@@ -21,7 +21,7 @@ class Executor:
         self.scale_parameters: ScaleParameters = scale_parameters
         self.universalis: Universalis = universalis
 
-    async def execute_transaction(self):
+    async def execute_transactions(self):
         tasks = []
         # x = rand.number(1, 100)
         #
@@ -40,6 +40,7 @@ class Executor:
         params = {
             'w_id': self.make_warehouse_id(),
             'd_id': self.make_district_id(),
+            'c_id': self.make_customer_id(),
             'o_entry_d': datetime.now().strftime("%m/%d/%Y, %H:%M:%S"),
         }
         key: str = tuple_to_composite((params['w_id'], params['d_id']))
@@ -47,9 +48,9 @@ class Executor:
         # 1% of transactions roll back
         rollback = rand.number(1, 100) == 1
 
-        i_ids = []
-        i_w_ids = []
-        i_qtys = []
+        params['i_ids'] = []
+        params['i_w_ids'] = []
+        params['i_qtys'] = []
         ol_cnt = rand.number(constants.MIN_OL_CNT, constants.MAX_OL_CNT)
 
         for i in range(0, ol_cnt):
@@ -57,14 +58,14 @@ class Executor:
             #     i_ids.append(self.scale_parameters.items + 1)
             # else:
             i_id = self.make_item_id()
-            while i_id in i_ids:
+            while i_id in params['i_ids']:
                 i_id = self.make_item_id()
-            i_ids.append(i_id)
+            params['i_ids'].append(i_id)
 
             # 1% of items are from a remote warehouse
             remote = (rand.number(1, 100) == 1)
             if self.scale_parameters.warehouses > 1 and remote:
-                i_w_ids.append(
+                params['i_w_ids'].append(
                     rand.number_excluding(
                         self.scale_parameters.starting_warehouse,
                         self.scale_parameters.ending_warehouse,
@@ -72,13 +73,9 @@ class Executor:
                     )
                 )
             else:
-                i_w_ids.append(params['w_id'])
+                params['i_w_ids'].append(params['w_id'])
 
-            i_qtys.append(rand.number(1, constants.MAX_OL_QUANTITY))
-
-        params['i_ids'] = i_ids
-        params['i_qtys'] = i_qtys
-        params['i_w_ids'] = i_w_ids
+            params['i_qtys'].append(rand.number(1, constants.MAX_OL_QUANTITY))
 
         return district_operator, key, district.NewOrder, params
 
@@ -87,9 +84,9 @@ class Executor:
         x = rand.number(1, 100)
 
         params = {
-            'c_id': self.make_customer_id(),
             'w_id': self.make_warehouse_id(),
             'd_id': self.make_district_id(),
+            'c_id': self.make_customer_id(),
             'c_last': None,
             'h_amount': rand.fixed_point(2, constants.MIN_PAYMENT, constants.MAX_PAYMENT),
             'h_date': datetime.now().strftime("%m/%d/%Y, %H:%M:%S")

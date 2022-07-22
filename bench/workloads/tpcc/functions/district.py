@@ -1,4 +1,6 @@
-from universalis.common.logging import logging
+import asyncio
+import logging
+
 from universalis.common.stateful_function import StatefulFunction
 
 from workloads.tpcc.util import constants
@@ -21,57 +23,67 @@ class NewOrder(StatefulFunction):
     async def run(self, key: str, params: dict):
         all_local = True
 
+        # Initialize transaction parameters
+        w_id: int = params['w_id']
+        d_id: int = params['d_id']
+        c_id: int = params['c_id']
+        o_entry_d: str = params['o_entry_d']
+        i_ids: list[int] = params['i_ids']
+        i_w_ids: list[int] = params['i_w_ids']
+        i_qtys: list[int] = params['i_qtys']
+
         # Validate transaction parameters
-        assert len(params['i_ids']) > 0
-        assert len(params['i_ids']) == len(params['i_w_ids'])
-        assert len(params['i_ids']) == len(params['i_qtys'])
+        assert len(i_ids) > 0
+        assert len(i_ids) == len(i_w_ids)
+        assert len(i_ids) == len(i_qtys)
 
-        items = []
-        for k, v in enumerate(params['i_ids']):
-            all_local = all_local and v == params['w_id']
-            logging.warning(f'Getting i_id:{v}')
-            data = await self.call_remote_function_request_response('item', 'GetItem', str(v), (str(v),))
-            logging.warning(f'Got {data}')
-            items.append(data)
+        tasks = []
+        for k, v in enumerate(i_ids):
+            all_local = all_local and i_w_ids[k] == w_id
 
-        return items
-        assert len(items) == len(params['i_ids'])
-        logging.warning(items)
+            i_key = str(v)
+            tasks.append(self.call_remote_function_request_response('item', 'GetItem', i_key, (i_key,)))
+
+        items = await asyncio.gather(*tasks)
+        assert len(items) == len(i_ids)
 
         # --------------------
         # Get Customer, Warehouse and District information
         # --------------------
-        warehouse_key = params['w_id']
-        customer_key = tuple_to_composite((params['w_id'], params['d_id'], params['c_id']))
+        warehouse_key = str(w_id)
+        customer_key = tuple_to_composite((w_id, d_id, c_id))
 
-        warehouse = await self.call_remote_function_request_response(
+        warehouse_data = await self.call_remote_function_request_response(
             'warehouse',
             'GetWarehouse',
             warehouse_key,
             (warehouse_key,)
         )
+        logging.warning(f'Got warehouse: {warehouse_data}')
 
         district = await self.get(key)
-        customer = await self.call_remote_function_request_response(
+        logging.warning(f'Got district: {district}')
+
+        customer_data = await self.call_remote_function_request_response(
             'customer',
             'GetCustomer',
             customer_key,
             (customer_key,)
         )
+        logging.warning(f'Got customer: {customer_data}')
 
-        w_tax = float(warehouse['w_tax'])
+        w_tax = float(warehouse_data['w_tax'])
         d_tax = float(district['d_tax'])
         d_next_o_id = district['d_next_o_id']
-        customer_info = customer
-        c_discount = float(customer['c_discount'])
+        c_discount = float(customer_data['c_discount'])
 
         # --------------------------
         # Insert Order Information
         # --------------------------
-        ol_cnt = len(params['i_ids'])
+        ol_cnt = len(i_ids)
         o_carrier_id = 0o0
-        order_key = tuple_to_composite((params['w_id'], params['d_id'], d_next_o_id))
-        new_order_key = tuple_to_composite((params['w_id'], params['d_id'], d_next_o_id))
+        order_key = tuple_to_composite((w_id, d_id, d_next_o_id))
+        new_order_key = tuple_to_composite((w_id, d_id, d_next_o_id))
 
         # --------------------------
         # Increment next order id
@@ -84,23 +96,24 @@ class NewOrder(StatefulFunction):
         # --------------------
         order_params = {
             'o_id': d_next_o_id,
-            'o_d_id': params['d_id'],
-            'o_w_id': params['w_id'],
-            'o_c_id': params['c_id'],
-            'o_entry_d': params['o_entry_d'],
+            'o_d_id': d_id,
+            'o_w_id': w_id,
+            'o_c_id': c_id,
+            'o_entry_d': o_entry_d,
             'o_carrier_id': o_carrier_id,
             'o_ol_cnt': ol_cnt,
             'o_all_local': all_local
         }
         await self.call_remote_function_no_response('order', 'InsertOrder', order_key, (order_key, order_params,))
+        logging.warning(f'Inserted order')
 
         # ------------------------
         # Create New Order Query
         # ------------------------
         new_order_params = {
             'no_o_id': d_next_o_id,
-            'no_d_id': params['d_id'],
-            'no_w_id': params['w_id'],
+            'no_d_id': d_id,
+            'no_w_id': w_id,
         }
         await self.call_remote_function_no_response(
             'new_order',
@@ -108,6 +121,7 @@ class NewOrder(StatefulFunction):
             new_order_key,
             (new_order_key, new_order_params,)
         )
+        logging.warning(f'Inserted new order')
 
         # -------------------------------
         # Insert Order Item Information
@@ -125,13 +139,13 @@ class NewOrder(StatefulFunction):
         stock_info = []
         stock_key = []
 
-        for k, v in enumerate(params['i_ids']):
-            ol_number.append(k + 1)
-            ol_supply_w_id.append(params['i_w_ids'][k])
-            ol_i_id.append(params['i_ids'][k])
-            ol_quantity.append(params['i_qtys'][k])
+        for key, value in enumerate(i_ids):
+            ol_number.append(key + 1)
+            ol_supply_w_id.append(i_w_ids[key])
+            ol_i_id.append(i_ids[key])
+            ol_quantity.append(i_qtys[key])
 
-            item_info = items[k]
+            item_info = items[key]
             i_name.append(item_info['i_name'])
             i_data.append(item_info['i_data'])
             i_price.append(float(item_info['i_price']))
@@ -139,28 +153,28 @@ class NewOrder(StatefulFunction):
             # -----------------------------
             # Get Stock Information Query
             # -----------------------------
-            stock_key.append(tuple_to_composite(([ol_supply_w_id][k], ol_i_id[k])))
+            stock_key.append(tuple_to_composite(([ol_supply_w_id][key], ol_i_id[key])))
             stock_info.append(await self.call_remote_function_no_response('stock', 'GetStock', stock_key, (stock_key,)))
 
-        for k, v in enumerate(stock_info):
-            s_quantity = float(v['s_quantity'])
-            s_ytd = float(v['s_ytd'])
-            s_order_cnt = float(v['s_order_cnt'])
-            s_remote_cnt = float(v['s_remote_cnt'])
-            s_data = v['s_data']
-            s_dist_xx = v['S_DIST_' + str(params['d_id'])]
+        for key, value in enumerate(stock_info):
+            s_quantity = float(value['s_quantity'])
+            s_ytd = float(value['s_ytd'])
+            s_order_cnt = float(value['s_order_cnt'])
+            s_remote_cnt = float(value['s_remote_cnt'])
+            s_data = value['s_data']
+            s_dist_xx = value['S_DIST_' + str(d_id)]
 
             # --------------------
             # Update Stock Query
             # --------------------
-            s_ytd += ol_quantity[k]
-            if s_quantity >= ol_quantity[k] + 10:
-                s_quantity = s_quantity - ol_quantity[k]
+            s_ytd += ol_quantity[key]
+            if s_quantity >= ol_quantity[key] + 10:
+                s_quantity = s_quantity - ol_quantity[key]
             else:
-                s_quantity = s_quantity + 91 - ol_quantity[k]
+                s_quantity = s_quantity + 91 - ol_quantity[key]
             s_order_cnt += 1
 
-            if ol_supply_w_id[k] != params['w_id']:
+            if ol_supply_w_id[key] != w_id:
                 s_remote_cnt += 1
 
             stock_params = {
@@ -173,28 +187,28 @@ class NewOrder(StatefulFunction):
             await self.call_remote_function_no_response(
                 'stock',
                 'InsertStock',
-                stock_key[k],
-                (stock_key[k], stock_params)
+                stock_key[key],
+                (stock_key[key], stock_params)
             )
 
-            if i_data[k].find(constants.ORIGINAL_STRING) != -1 and s_data.find(constants.ORIGINAL_STRING) != -1:
+            if i_data[key].find(constants.ORIGINAL_STRING) != -1 and s_data.find(constants.ORIGINAL_STRING) != -1:
                 brand_generic = 'B'
             else:
                 brand_generic = 'G'
 
             # Transaction profile states to use "ol_quantity * i_price"
-            ol_amount = ol_quantity[k] * i_price[k]
+            ol_amount = ol_quantity[key] * i_price[key]
             total += ol_amount
 
             # -------------------------
             # Create Order Line Query
             # -------------------------
-            order_line_key = tuple_to_composite((params['w_id'], params['d_id'], d_next_o_id, ol_number))
+            order_line_key = tuple_to_composite((w_id, d_id, d_next_o_id, ol_number))
             order_line_params = {
-                'ol_i_id': ol_i_id[k],
-                'ol_supply_w_id': ol_supply_w_id[k],
-                'ol_delivery_d': params['o_entry_d'],
-                'ol_quantity': ol_quantity[k],
+                'ol_i_id': ol_i_id[key],
+                'ol_supply_w_id': ol_supply_w_id[key],
+                'ol_delivery_d': o_entry_d,
+                'ol_quantity': ol_quantity[key],
                 'ol_amount': ol_amount,
                 'ol_dist_info': s_dist_xx
             }
@@ -213,4 +227,4 @@ class NewOrder(StatefulFunction):
         # Pack up values the client is missing (see TPC-C 2.4.3.5)
         misc = w_tax, d_tax, d_next_o_id, total
 
-        return (customer_info,) + misc + (item_data,)
+        return (customer_data,) + misc + (item_data,)
