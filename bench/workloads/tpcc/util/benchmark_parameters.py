@@ -2,7 +2,7 @@ class BenchmarkParameters:
     def __init__(
             self,
             loader_batch_size: int = 1000,
-            executor_batch_size: int = 50,
+            executor_batch_size: int = 25,
             benchmark_duration: float = 60.0,
     ):
         self.loader_batch_size: int = loader_batch_size
