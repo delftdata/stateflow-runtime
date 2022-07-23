@@ -14,40 +14,47 @@ from common.logging import logging
 from workloads.tpcc.functions import customer, district
 from workloads.tpcc.functions.graph import customer_operator, district_operator
 from workloads.tpcc.util import rand, constants
+from workloads.tpcc.util.benchmark_parameters import BenchmarkParameters
 from workloads.tpcc.util.key import tuple_to_composite
 from workloads.tpcc.util.scale_parameters import ScaleParameters
 
 
 class Executor:
-    def __init__(self, scale_parameters: ScaleParameters, universalis: Universalis, batch_size: int = 10000):
-        self.batch_size = batch_size
+    def __init__(
+            self,
+            benchmark_parameters: BenchmarkParameters,
+            scale_parameters: ScaleParameters,
+            universalis: Universalis
+    ):
+        self.benchmark_parameters: BenchmarkParameters = benchmark_parameters
         self.scale_parameters: ScaleParameters = scale_parameters
         self.universalis: Universalis = universalis
 
-    async def execute_transactions(self, duration: float):
+    async def execute_transactions(self):
         tasks = []
         start = time.time()
         responses = []
         fun_cnts: dict = {district.NewOrder: 0, customer.Payment: 0}
 
-        while (time.time() - start) <= duration:
+        while (time.time() - start) <= self.benchmark_parameters.benchmark_duration:
             choice = rand.number(1, 100)
 
-            if choice <= 50:
-                operator, key, fun, params = self.generate_payment_params()
-                fun_cnts[fun] += 1
-            else:
-                operator, key, fun, params = self.generate_new_order_params()
-                fun_cnts[fun] += 1
+            # if choice <= 50:
+            operator, key, fun, params = self.generate_payment_params()
+            fun_cnts[fun] += 1
+            # else:
+            # operator, key, fun, params = self.generate_new_order_params()
+            fun_cnts[fun] += 1
 
             tasks.append(self.universalis.send_kafka_event(operator, key, fun, (key, params,)))
 
-            if len(tasks) == self.batch_size:
-                responses.append(await asyncio.gather(*tasks))
+            if len(tasks) == self.benchmark_parameters.executor_batch_size:
+                responses += await asyncio.gather(*tasks)
                 tasks = []
+                await asyncio.sleep(0.5)
 
         if len(tasks) > 0:
-            responses.append(await asyncio.gather(*tasks))
+            responses += await asyncio.gather(*tasks)
 
         logging.info(fun_cnts)
         return responses

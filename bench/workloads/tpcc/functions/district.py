@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 from universalis.common.stateful_function import StatefulFunction
 
@@ -42,8 +43,10 @@ class NewOrder(StatefulFunction):
 
             i_key = str(v)
             tasks.append(self.call_remote_function_request_response('item', 'GetItem', i_key, (i_key,)))
-
+        logging.warning('Getting items')
         items = await asyncio.gather(*tasks)
+        logging.warning('Got items')
+
         assert len(items) == len(i_ids)
 
         # --------------------
@@ -52,15 +55,20 @@ class NewOrder(StatefulFunction):
         warehouse_key = str(w_id)
         customer_key = tuple_to_composite((w_id, d_id, c_id))
 
+        logging.warning('Getting warehouse')
         warehouse_data = await self.call_remote_function_request_response(
             'warehouse',
             'GetWarehouse',
             warehouse_key,
             (warehouse_key,)
         )
+        logging.warning('Got warehouse')
 
+        logging.warning('Getting district')
         district = await self.get(key)
+        logging.warning('Got district')
 
+        logging.warning('Got customer')
         customer_data = await self.call_remote_function_request_response(
             'customer',
             'GetCustomer',
@@ -91,32 +99,33 @@ class NewOrder(StatefulFunction):
         # Create Order query
         # --------------------
         order_params = {
-            'o_id': d_next_o_id,
-            'o_d_id': d_id,
-            'o_w_id': w_id,
             'o_c_id': c_id,
             'o_entry_d': o_entry_d,
             'o_carrier_id': o_carrier_id,
             'o_ol_cnt': ol_cnt,
             'o_all_local': all_local
         }
+        logging.warning('Inserting order')
         await self.call_remote_function_no_response('order', 'InsertOrder', order_key, (order_key, order_params,))
+        logging.warning('Inserting order')
 
         # ------------------------
         # Create New Order Query
         # ------------------------
         new_order_params = {
-            'no_o_id': d_next_o_id,
-            'no_d_id': d_id,
             'no_w_id': w_id,
+            'no_d_id': d_id,
+            'no_o_id': d_next_o_id,
         }
 
+        logging.warning('Inserting neworder')
         await self.call_remote_function_no_response(
             'new_order',
             'InsertNewOrder',
             new_order_key,
             (new_order_key, new_order_params,)
         )
+        logging.warning('Inserted neworder')
 
         # -------------------------------
         # Insert Order Item Information
@@ -151,6 +160,7 @@ class NewOrder(StatefulFunction):
             stock_key = tuple_to_composite((ol_supply_w_id[k], ol_i_id[k]))
             stock_keys.append(stock_key)
 
+            logging.warning('Getting Stock info')
             stock_info.append(
                 await self.call_remote_function_request_response(
                     'stock',
@@ -159,6 +169,7 @@ class NewOrder(StatefulFunction):
                     (stock_key,)
                 )
             )
+            logging.warning('Got Stock info')
 
         for k, v in enumerate(stock_info):
             s_quantity = float(v['s_quantity'])
@@ -181,21 +192,21 @@ class NewOrder(StatefulFunction):
             if ol_supply_w_id[k] != w_id:
                 s_remote_cnt += 1
 
-            stock_params = {
-                's_quantity': s_quantity,
-                's_ytd': s_ytd,
-                's_order_cnt': s_order_cnt,
-                's_remote_cnt': s_remote_cnt,
-                's_data': s_data,
-                's_dist_' + str(d_id): s_dist_xx
-            }
+            v['s_quantity']: s_quantity
+            v['s_ytd']: s_ytd
+            v['s_order_cnt']: s_order_cnt
+            v['s_remote_cnt']: s_remote_cnt
+            v['s_data']: s_data
+            v['s_dist_' + str(d_id)]: s_dist_xx
 
+            logging.warning('Inserting Stock')
             await self.call_remote_function_no_response(
                 'stock',
                 'InsertStock',
                 stock_keys[k],
-                (stock_keys[k], stock_params)
+                (stock_keys[k], v)
             )
+            logging.warning('Inserted Stock')
 
             if i_data[k].find(constants.ORIGINAL_STRING) != -1 and s_data.find(constants.ORIGINAL_STRING) != -1:
                 brand_generic = 'B'
@@ -219,12 +230,14 @@ class NewOrder(StatefulFunction):
                 'ol_dist_info': s_dist_xx
             }
 
+            logging.warning('Inserting Order Line')
             await self.call_remote_function_no_response(
                 'order_line',
                 'InsertOrderLine',
                 order_line_key,
                 (order_line_key, order_line_params)
             )
+            logging.warning('Inserted Order Line')
 
             item_data.append((i_name, s_quantity, brand_generic, i_price, ol_amount))
 

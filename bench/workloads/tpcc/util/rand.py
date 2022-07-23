@@ -2,8 +2,8 @@
 # Adapted from MongoDB-labs py-tpcc package:
 # https://github.com/mongodb-labs/py-tpcc/blob/master/pytpcc/util/rand.py
 # -----------------------------------------------------------------------
-
 import random
+from math import floor
 
 from workloads.tpcc.util.nurand import make_for_load, NURandC
 
@@ -115,7 +115,7 @@ def make_last_name(num: int) -> str:
     global SYLLABLES
     assert 0 <= num <= 999
 
-    indices = [round(num / 100), round((num / 10)) % 10, num % 10]
+    indices = [floor(num / 100), floor((num / 10)) % 10, num % 10]
     return "".join(map(lambda x: SYLLABLES[x], indices))
 
 

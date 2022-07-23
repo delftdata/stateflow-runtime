@@ -34,7 +34,7 @@ EPOCH_INTERVAL: float = 0.01  # 10ms
 SEQUENCE_MAX_SIZE: int = 100
 DETERMINISTIC_REORDERING: bool = True
 FALLBACK_STRATEGY_PERCENTAGE: float = 0.1  # if more than 10% aborts use fallback strategy
-ABORT_RATE_OUTPUT_INTERVAL = 10  # How long to wait after epoch end to output to file
+ABORT_RATE_OUTPUT_INTERVAL = 5  # How long to wait after epoch end to output to file
 
 
 class Worker:
@@ -82,7 +82,7 @@ class Worker:
             t_id: int,
             payload: RunFuncPayload,
             internal_msg: bool = False
-            ) -> bool:
+    ) -> bool:
         operator_partition = self.registered_operators[(payload.operator_name, payload.partition)]
         response = await asyncio.ensure_future(
             operator_partition.run_function(
@@ -101,8 +101,8 @@ class Worker:
                 (payload.response_socket, self.networking.encode_message(
                     response,
                     Serializer.MSGPACK
-                    ))
-                )
+                ))
+            )
         elif response is not None and not internal_msg:
             if isinstance(response, Exception):
                 self.logic_aborts.add(t_id)
@@ -195,8 +195,8 @@ class Worker:
                 self.run_fallback_function(
                     sequenced_item.t_id,
                     sequenced_item.payload
-                    )
                 )
+            )
 
         for t_id, payloads in self.remote_function_calls.items():
             if t_id not in aborted_sequence_t_ids and t_id not in logic_aborts_everywhere:
@@ -365,11 +365,11 @@ class Worker:
             logging.warning(
                 f'Epoch: {self.sequencer.epoch_counter} '
                 f'Abort percentage: {int(abort_rate * 100)}% initiating fallback strategy...'
-                )
+            )
             logging.warning(
                 f'Epoch: {self.sequencer.epoch_counter} '
                 f'Fallback strategy done waiting for peers'
-                )
+            )
             await self.wait_fallback_done_sync()
 
         await self.sequencer.increment_epoch(self.t_counters.values())
@@ -630,8 +630,8 @@ class Worker:
                                     processed_seq_size)
                     },
                     Serializer.MSGPACK
-                    ))
-                )
+                ))
+            )
 
     async def send_fallback_unlock_to_peers(self, t_id: int, success: bool):
         for worker_id, url in self.peers.items():
@@ -643,8 +643,8 @@ class Worker:
                         "__MSG__": (t_id, success)
                     },
                     Serializer.MSGPACK
-                    ))
-                )
+                ))
+            )
 
     async def send_fallback_sync_to_peers(self, phase: str):
         for worker_id, url in self.peers.items():
@@ -656,8 +656,8 @@ class Worker:
                         "__MSG__": self.id
                     },
                     Serializer.MSGPACK
-                    ))
-                )
+                ))
+            )
 
     async def send_responses(self, concurrency_aborts_everywhere: set[int], logic_aborts_everywhere: set[int]):
         send_message_tasks = []
@@ -670,7 +670,7 @@ class Worker:
                             EGRESS_TOPIC_NAME,
                             key=response[0],
                             value=msgpack_serialization(response[1])
-                            )
+                        )
                     )
                 )
         await asyncio.gather(*send_message_tasks)

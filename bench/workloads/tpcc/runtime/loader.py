@@ -19,6 +19,7 @@ from workloads.tpcc.functions.graph import (
     order_operator, order_line_operator, new_order_operator, district_operator, stock_operator,
 )
 from workloads.tpcc.util import rand, constants
+from workloads.tpcc.util.benchmark_parameters import BenchmarkParameters
 from workloads.tpcc.util.key import tuple_to_composite
 from workloads.tpcc.util.scale_parameters import ScaleParameters
 
@@ -26,14 +27,14 @@ from workloads.tpcc.util.scale_parameters import ScaleParameters
 class Loader:
     def __init__(
             self,
+            benchmark_parameters: BenchmarkParameters,
             scale_parameters: ScaleParameters,
             w_ids: list[int],
             universalis: Universalis,
-            batch_size: int = 10000
     ):
+        self.benchmark_parameters = benchmark_parameters
         self.scale_parameters = scale_parameters
         self.w_ids: w_ids = w_ids
-        self.batch_size: int = batch_size
         self.universalis: Universalis = universalis
 
     async def execute(self):
@@ -69,9 +70,10 @@ class Loader:
             )
             total_tuples += 1
 
-            if len(tasks) == self.batch_size:
+            if len(tasks) == self.benchmark_parameters.loader_batch_size:
                 await asyncio.gather(*tasks)
                 tasks = []
+                await asyncio.sleep(0.5)
                 logging.info(
                     "LOAD - %s: %5d / %d" % (constants.TABLENAME_ITEM, total_tuples, self.scale_parameters.items)
                 )
@@ -216,6 +218,11 @@ class Loader:
             await asyncio.sleep(0.5)
             await asyncio.gather(*no_tasks)
 
+            logging.info(
+                "LOAD - %s: %d / %d" % (
+                    constants.TABLENAME_DISTRICT, d_id, self.scale_parameters.districts_per_warehouse)
+            )
+
         # Select 10% of the stock to be marked "original"
         s_tasks = []
         selected_rows = rand.select_unique_ids(round(self.scale_parameters.items / 10), 1, self.scale_parameters.items)
@@ -233,8 +240,9 @@ class Loader:
                     (key, params)
                 )
             )
+            total_tuples += 1
 
-            if len(s_tasks) >= self.batch_size:
+            if len(s_tasks) == self.benchmark_parameters.loader_batch_size:
                 logging.info(
                     "LOAD - %s [W_ID=%d]: %5d / %d" % (
                         constants.TABLENAME_STOCK, w_id, total_tuples, self.scale_parameters.items)
@@ -242,7 +250,6 @@ class Loader:
 
                 await asyncio.gather(*s_tasks)
                 s_tasks = []
-            total_tuples += 1
 
         if len(s_tasks) > 0:
             logging.info(
@@ -290,8 +297,8 @@ class Loader:
         return key, {
             'c_first': rand.a_string(constants.MIN_FIRST, constants.MAX_FIRST),
             'c_middle': constants.MIDDLE,
-            'c_last': rand.make_last_name(c_id - 1) if c_id <= 1000
-            else rand.make_last_name(constants.CUSTOMERS_PER_DISTRICT),
+            'c_last': rand.make_last_name(c_id - 1) if c_id < 1000
+            else rand.make_random_last_name(constants.CUSTOMERS_PER_DISTRICT),
             'c_phone': rand.n_string(constants.PHONE, constants.PHONE),
             'c_since': datetime.now().strftime("%m/%d/%Y, %H:%M:%S"),
             'c_credit': constants.BAD_CREDIT if bad_credit else constants.GOOD_CREDIT,

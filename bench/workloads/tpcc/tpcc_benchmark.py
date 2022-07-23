@@ -1,5 +1,8 @@
 import asyncio
+import os
+from abc import abstractmethod
 
+import pandas as pd
 from universalis.common.stateflow_ingress import IngressTypes
 from universalis.universalis import Universalis
 
@@ -9,6 +12,7 @@ from workloads.tpcc.functions.graph import g
 from workloads.tpcc.runtime.executor import Executor
 from workloads.tpcc.runtime.loader import Loader
 from workloads.tpcc.util import rand, nurand
+from workloads.tpcc.util.benchmark_parameters import BenchmarkParameters
 from workloads.tpcc.util.scale_parameters import make_with_scale_factor
 
 
@@ -22,7 +26,8 @@ class TpccBenchmark:
     executor: Executor
 
     def __init__(self):
-        self.scale_parameters = make_with_scale_factor(1, 1000)
+        self.benchmark_parameters = BenchmarkParameters(benchmark_duration=1)
+        self.scale_parameters = make_with_scale_factor(1, 100)
         self.nu_rand = rand.set_nu_rand(nurand.make_for_load())
 
     async def initialise(self):
@@ -33,8 +38,8 @@ class TpccBenchmark:
             kafka_url=self.KAFKA_URL
         )
 
-        self.loader = Loader(self.scale_parameters, [1], self.universalis)
-        self.executor = Executor(self.scale_parameters, self.universalis)
+        self.loader = Loader(self.benchmark_parameters, self.scale_parameters, [1], self.universalis)
+        self.executor = Executor(self.benchmark_parameters, self.scale_parameters, self.universalis)
 
         await self.universalis.submit(g, (workloads,))
         logging.info('Graph submitted')
@@ -43,10 +48,22 @@ class TpccBenchmark:
         await self.loader.execute()
 
     async def run_transaction_mix(self):
-        responses = await self.executor.execute_transactions(10)
+        return await self.executor.execute_transactions()
 
     async def cleanup(self):
         await self.universalis.close()
+
+    @abstractmethod
+    def generate_request_data(self, responses):
+        timestamped_request_ids = {}
+
+        for response in responses:
+            request_id, timestamp = response
+            timestamped_request_ids[request_id] = timestamp
+
+        requests_filename = os.path.join('./results', 'requests.csv')
+        requests = pd.DataFrame(timestamped_request_ids.items(), columns=['request_id', 'timestamp'])
+        requests.to_csv(requests_filename, index=False)
 
     async def run(self):
         logging.info('Initialising...')
@@ -58,9 +75,13 @@ class TpccBenchmark:
         logging.info('Finished inserting')
         await asyncio.sleep(2)
         logging.info('Running transaction mix...')
-        await self.run_transaction_mix()
+        requests = await self.run_transaction_mix()
         logging.info('Finished running transaction mix')
         await asyncio.sleep(2)
         logging.info('Cleaning up...')
         await self.cleanup()
         logging.info('Cleaned up')
+        await asyncio.sleep(2)
+        logging.info('Generating request data...')
+        self.generate_request_data(requests)
+        logging.info('Generated request data')
