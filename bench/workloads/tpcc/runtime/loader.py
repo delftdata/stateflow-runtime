@@ -39,7 +39,7 @@ class Loader:
 
     async def execute(self):
         await self.load_items()
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(self.benchmark_parameters.loader_batch_wait_time)
 
         for w_id in self.w_ids:
             await self.load_warehouse(w_id)
@@ -73,7 +73,7 @@ class Loader:
             if len(tasks) == self.benchmark_parameters.loader_batch_size:
                 await asyncio.gather(*tasks)
                 tasks = []
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(self.benchmark_parameters.loader_batch_wait_time)
                 logging.info(
                     "LOAD - %s: %5d / %d" % (constants.TABLENAME_ITEM, total_tuples, self.scale_parameters.items)
                 )
@@ -126,6 +126,11 @@ class Loader:
                     )
                 )
 
+                if len(c_tasks) == self.benchmark_parameters.loader_batch_size:
+                    await asyncio.gather(*c_tasks)
+                    await asyncio.sleep(self.benchmark_parameters.loader_batch_wait_time)
+                    c_tasks = []
+
                 key, params = self.generate_history(w_id, d_id, c_id)
                 h_tasks.append(
                     self.universalis.send_kafka_event(
@@ -135,6 +140,11 @@ class Loader:
                         (key, params)
                     )
                 )
+
+                if len(h_tasks) == self.benchmark_parameters.loader_batch_size:
+                    await asyncio.gather(*h_tasks)
+                    await asyncio.sleep(self.benchmark_parameters.loader_batch_wait_time)
+                    h_tasks = []
 
                 c_id_permutation.append(c_id)
 
@@ -167,6 +177,11 @@ class Loader:
                     )
                 )
 
+                if len(o_tasks) > self.benchmark_parameters.loader_batch_size:
+                    await asyncio.gather(*o_tasks)
+                    await asyncio.sleep(self.benchmark_parameters.loader_batch_wait_time)
+                    o_tasks = []
+
                 # Generate each order_line for the order
                 for ol_number in range(0, o_ol_cnt):
                     key, params = self.generate_order_line(
@@ -187,6 +202,11 @@ class Loader:
                         )
                     )
 
+                    if len(ol_tasks) > self.benchmark_parameters.loader_batch_size:
+                        await asyncio.gather(*ol_tasks)
+                        await asyncio.sleep(self.benchmark_parameters.loader_batch_wait_time)
+                        ol_tasks = []
+
                 # This is a new order: make one for it
                 if is_new_order:
                     no_key: str = tuple_to_composite((w_id, d_id, o_id))
@@ -199,6 +219,11 @@ class Loader:
                         )
                     )
 
+                    if len(no_tasks) > self.benchmark_parameters.loader_batch_size:
+                        await asyncio.gather(*no_tasks)
+                        await asyncio.sleep(self.benchmark_parameters.loader_batch_wait_time)
+                        no_tasks = []
+
             key, params = self.generate_district(w_id, d_id, d_next_o_id)
 
             await self.universalis.send_kafka_event(
@@ -208,15 +233,21 @@ class Loader:
                 (key, params)
             )
 
-            await asyncio.gather(*c_tasks)
-            await asyncio.sleep(0.5)
-            await asyncio.gather(*h_tasks)
-            await asyncio.sleep(0.5)
-            await asyncio.gather(*o_tasks)
-            await asyncio.sleep(0.5)
-            await asyncio.gather(*ol_tasks)
-            await asyncio.sleep(0.5)
-            await asyncio.gather(*no_tasks)
+            if len(c_tasks) > 0:
+                await asyncio.gather(*c_tasks)
+                await asyncio.sleep(self.benchmark_parameters.loader_batch_wait_time)
+            if len(h_tasks) > 0:
+                await asyncio.gather(*h_tasks)
+                await asyncio.sleep(self.benchmark_parameters.loader_batch_wait_time)
+            if len(o_tasks) > 0:
+                await asyncio.gather(*o_tasks)
+                await asyncio.sleep(self.benchmark_parameters.loader_batch_wait_time)
+            if len(ol_tasks) > 0:
+                await asyncio.gather(*ol_tasks)
+                await asyncio.sleep(self.benchmark_parameters.loader_batch_wait_time)
+            if len(no_tasks) > 0:
+                await asyncio.gather(*no_tasks)
+                await asyncio.sleep(self.benchmark_parameters.loader_batch_wait_time)
 
             logging.info(
                 "LOAD - %s: %d / %d" % (

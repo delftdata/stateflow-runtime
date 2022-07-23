@@ -39,19 +39,19 @@ class Executor:
         while (time.time() - start) <= self.benchmark_parameters.benchmark_duration:
             choice = rand.number(1, 100)
 
-            # if choice <= 50:
-            operator, key, fun, params = self.generate_payment_params()
-            fun_cnts[fun] += 1
-            # else:
-            # operator, key, fun, params = self.generate_new_order_params()
-            fun_cnts[fun] += 1
+            if choice <= 49:
+                operator, key, fun, params = self.generate_payment_params()
+                fun_cnts[fun] += 1
+            else:
+                operator, key, fun, params = self.generate_new_order_params()
+                fun_cnts[fun] += 1
 
             tasks.append(self.universalis.send_kafka_event(operator, key, fun, (key, params,)))
 
             if len(tasks) == self.benchmark_parameters.executor_batch_size:
                 responses += await asyncio.gather(*tasks)
                 tasks = []
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(self.benchmark_parameters.executor_batch_wait_time)
 
         if len(tasks) > 0:
             responses += await asyncio.gather(*tasks)

@@ -1,3 +1,4 @@
+from universalis.common.logging import logging
 from universalis.common.stateful_function import StatefulFunction
 
 from workloads.tpcc.util import constants
@@ -22,6 +23,8 @@ class GetCustomer(StatefulFunction):
 
 class Payment(StatefulFunction):
     async def run(self, key: str, params: dict):
+        logging.warning('Running Payment')
+
         # Initialize transaction properties
         w_id: str = params['w_id']
         d_id: str = params['d_id']

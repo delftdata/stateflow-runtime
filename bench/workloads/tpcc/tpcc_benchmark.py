@@ -26,8 +26,8 @@ class TpccBenchmark:
     executor: Executor
 
     def __init__(self):
-        self.benchmark_parameters = BenchmarkParameters(benchmark_duration=1)
-        self.scale_parameters = make_with_scale_factor(1, 100)
+        self.benchmark_parameters = BenchmarkParameters()
+        self.scale_parameters = make_with_scale_factor(2, 500)
         self.nu_rand = rand.set_nu_rand(nurand.make_for_load())
 
     async def initialise(self):
@@ -38,7 +38,8 @@ class TpccBenchmark:
             kafka_url=self.KAFKA_URL
         )
 
-        self.loader = Loader(self.benchmark_parameters, self.scale_parameters, [1], self.universalis)
+        w_ids: list[int] = list(range(1, self.scale_parameters.warehouses + 1))
+        self.loader = Loader(self.benchmark_parameters, self.scale_parameters, w_ids, self.universalis)
         self.executor = Executor(self.benchmark_parameters, self.scale_parameters, self.universalis)
 
         await self.universalis.submit(g, (workloads,))
