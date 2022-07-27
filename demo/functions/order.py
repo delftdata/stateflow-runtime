@@ -23,13 +23,15 @@ class Checkout(StatefulFunction):
         total_cost = 0
         for item in order_data['items']:
             # call stock operator to subtract stock
-            self.call_remote_async(function=stock.SubtractStock,
+            self.call_remote_async(operator_name='stock',
+                                   function_name=stock.SubtractStock,
                                    key=item['item_key'],
                                    params=(item['item_key'], item['quantity']))
 
             total_cost += item['quantity'] * item['cost']
             # call user operator to subtract credit
-        self.call_remote_async(function=user.SubtractCredit,
+        self.call_remote_async(operator_name='user',
+                               function_name=user.SubtractCredit,
                                key=order_data['user_key'],
                                params=(order_data['user_key'], total_cost))
         return order_data

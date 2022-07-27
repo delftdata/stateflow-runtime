@@ -16,8 +16,6 @@ class NotAFunctionError(Exception):
 
 class Operator(BaseOperator):
 
-    operator_functions: dict[str, str]  # function_name: operator_name
-
     def __init__(self,
                  name: str,
                  n_partitions: int = 1):
@@ -42,7 +40,6 @@ class Operator(BaseOperator):
                                                                       self.dns,
                                                                       t_id,
                                                                       request_id,
-                                                                      self.operator_functions,
                                                                       fallback_mode)
         if ack_payload is not None:
             # part of a chain (not root)
@@ -76,11 +73,10 @@ class Operator(BaseOperator):
         function_definition = FunctionDefinition(function, self.name)
         self.functions[function.__name__] = function_definition
 
-    def attach_state_networking(self, state, networking, dns, operator_functions):
+    def attach_state_networking(self, state, networking, dns):
         self.state = state
         self.networking = networking
         self.dns = dns
-        self.operator_functions = operator_functions
 
     def register_stateful_functions(self, *function_definitions: Type):
         for function in function_definitions:
