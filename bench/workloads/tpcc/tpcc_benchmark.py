@@ -27,7 +27,7 @@ class TpccBenchmark:
 
     def __init__(self):
         self.benchmark_parameters = BenchmarkParameters()
-        self.scale_parameters = make_with_scale_factor(2, 500)
+        self.scale_parameters = make_with_scale_factor(2, 100)
         self.nu_rand = rand.set_nu_rand(nurand.make_for_load())
 
     async def initialise(self):
