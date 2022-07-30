@@ -60,7 +60,6 @@ class Worker:
         self.local_state: InMemoryOperatorState | RedisOperatorState | Stateless = Stateless()
         self.t_counters: dict[int, int] = {}
         self.response_buffer: dict[int, tuple[bytes, str]] = {}  # t_id: (request_id, response)
-        self.operator_functions: dict[str, str] = {}  # function_name: operator_name
         # FALLBACK LOCKING
         # (operator, key): {t_id depends on: completion event} sorted by lowest t_id
         self.waiting_on_transactions: dict[int, dict[int, asyncio.Event]] = {}
@@ -483,7 +482,7 @@ class Worker:
             case 'RUN_FUN_REMOTE' | 'RUN_FUN_RQ_RS_REMOTE':
                 request_id = message['__RQ_ID__']
                 if message_type == 'RUN_FUN_REMOTE':
-                    # TODO assume that they arrive in order, need to verify
+                    # TODO assume that they arrive in order, need to verify (why is this an issue?)
                     logging.info('CALLED RUN FUN FROM PEER')
                     payload = self.unpack_run_payload(message, request_id, ack_payload=deserialized_data['__ACK__'])
                     await self.scheduler.spawn(
@@ -555,10 +554,10 @@ class Worker:
             logging.error(f"Invalid operator state backend type: {self.operator_state_backend}")
             return
         for operator in self.registered_operators.values():
-            operator.attach_state_networking(self.local_state, self.networking, self.dns, self.operator_functions)
+            operator.attach_state_networking(self.local_state, self.networking, self.dns)
 
     async def handle_execution_plan(self, message):
-        worker_operators, self.dns, self.peers, self.operator_state_backend, self.operator_functions = message
+        worker_operators, self.dns, self.peers, self.operator_state_backend = message
         self.sequencer.set_n_workers(len(self.peers))
         del self.peers[self.id]
         operator: Operator

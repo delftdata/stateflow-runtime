@@ -46,7 +46,6 @@ class StatefulFunction(Function):
                  dns: dict[str, dict[str, tuple[str, int]]],
                  t_id: int,
                  request_id: str,
-                 operator_functions: dict[str, str],
                  fallback_mode: bool):
         super().__init__()
         self.operator_name = operator_name
@@ -57,7 +56,6 @@ class StatefulFunction(Function):
         self.t_id: int = t_id
         self.request_id: str = request_id
         self.async_remote_calls: list[tuple[str, str, object, tuple]] = []
-        self.operator_functions: dict[str, str] = operator_functions
         self.fallback_enabled: bool = fallback_mode
 
     async def __call__(self, *args, **kwargs):
@@ -77,6 +75,10 @@ class StatefulFunction(Function):
         except Exception as e:
             logging.debug(traceback.format_exc())
             return e, -1
+
+    @abstractmethod
+    async def run(self, *args):
+        raise NotImplementedError
 
     async def get(self, key):
         return await self.state.get(key, self.t_id, self.operator_name)
@@ -100,11 +102,22 @@ class StatefulFunction(Function):
             await asyncio.gather(*remote_calls)
         return n_remote_calls
 
-    def call_remote_async(self, function: Type, key, params):
-        function_name = function.__name__
-        self.async_remote_calls.append((self.operator_functions[function_name], function_name, key, params))
+    def call_remote_async(self,
+                          operator_name: str,
+                          function_name: Type | str,
+                          key,
+                          params):
+        if isinstance(function_name, type):
+            function_name = function_name.__name__
+        self.async_remote_calls.append((operator_name, function_name, key, params))
 
-    async def call_remote_function_no_response(self, operator_name, function_name, key, params, ack_payload=None):
+    async def call_remote_function_no_response(self,
+                                               operator_name: str,
+                                               function_name: Type | str, key,
+                                               params,
+                                               ack_payload=None):
+        if isinstance(function_name, type):
+            function_name = function_name.__name__
         partition, payload, operator_host, operator_port = await self.prepare_message_transmission(operator_name,
                                                                                                    key,
                                                                                                    function_name,
@@ -117,7 +130,13 @@ class StatefulFunction(Function):
                                                 "__MSG__": payload},
                                                Serializer.MSGPACK)
 
-    async def call_remote_function_request_response(self, operator_name, function_name, key, params):
+    async def call_remote_function_request_response(self,
+                                                    operator_name: str,
+                                                    function_name:  Type | str,
+                                                    key,
+                                                    params):
+        if isinstance(function_name, type):
+            function_name = function_name.__name__
         partition, payload, operator_host, operator_port = await self.prepare_message_transmission(operator_name,
                                                                                                    key,
                                                                                                    function_name,
@@ -145,9 +164,7 @@ class StatefulFunction(Function):
                    '__TIMESTAMP__': self.timestamp,
                    '__PARAMS__': params}
 
-        operator_host, operator_port = self.dns[operator_name][str(partition)][0], self.dns[operator_name][str(partition)][1]
-        return partition, payload, operator_host, operator_port
+        operator_host = self.dns[operator_name][str(partition)][0]
+        operator_port = self.dns[operator_name][str(partition)][1]
 
-    @abstractmethod
-    async def run(self, *args):
-        raise NotImplementedError
+        return partition, payload, operator_host, operator_port

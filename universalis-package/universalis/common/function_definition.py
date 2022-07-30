@@ -19,7 +19,6 @@ class FunctionDefinition:
                              dns: dict[str, dict[str, tuple[str, int]]],
                              t_id: int,
                              request_id: bytes,
-                             operator_functions: dict[str, str],
                              fallback_mode: bool) -> Union[Function, StatefulFunction]:
         return self.function_definition(self.operator_name,
                                         operator_state,
@@ -28,5 +27,4 @@ class FunctionDefinition:
                                         dns,
                                         t_id,
                                         request_id,
-                                        operator_functions,
                                         fallback_mode)

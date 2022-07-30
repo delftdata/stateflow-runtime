@@ -10,5 +10,5 @@ from workloads.ycsb.functions import ycsb
 g = StateflowGraph('ycsb_benchmark', operator_state_backend=LocalStateBackend.REDIS)
 ycsb_operator = Operator('ycsb', n_partitions=2)
 ####################################################################################################################
-ycsb_operator.register_stateful_functions(ycsb.Insert, ycsb.Read, ycsb.Update, ycsb.Transfer)
+ycsb_operator.register_stateful_functions(ycsb.Insert, ycsb.Read, ycsb.Update, ycsb.Transfer, ycsb.Debug)
 g.add_operator(ycsb_operator)
