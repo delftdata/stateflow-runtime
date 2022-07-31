@@ -1,49 +1,67 @@
 import asyncio
-import os.path
+import configparser
+import json
 import random
-from typing import Type
-
-import pandas as pd
-from universalis.common.stateflow_ingress import IngressTypes
-from universalis.universalis import Universalis
 
 from common.logging import logging
+from consumer.consumer import BenchmarkConsumer
 from workloads.ycsb.functions import ycsb
 from workloads.ycsb.functions.graph import ycsb_operator, g
+from workloads.ycsb.util import calculate_metrics
 from workloads.ycsb.util.zipfian_generator import ZipfGenerator
+
+from universalis.common.stateflow_ingress import IngressTypes
+from universalis.universalis import Universalis
 
 
 class YcsbBenchmark:
     UNIVERSALIS_HOST: str = 'localhost'
     UNIVERSALIS_PORT: int = 8886
     KAFKA_URL = 'localhost:9093'
+    consumer: BenchmarkConsumer()
     universalis: Universalis
-
-    N_ROWS = 100000
+    operations: list[str] = ['Read', 'Update', 'Transfer']
+    run_number: int
 
     def __init__(self):
-        self.keys: list[int] = list(range(self.N_ROWS))
-        self.operations: list[Type] = [ycsb.Read, ycsb.Update, ycsb.Transfer]
-        self.operation_counts: dict[Type, int] = {transaction: 0 for transaction in self.operations}
-        self.operation_mix: list[float] = [0, 0, 1]
-        self.batch_size: int = 10000
+        self.params = self.parse_benchmark_parameters()
+        self.num_runs = self.params['num_runs']
+        self.batch_size: int = self.params['batch_size']
+        self.num_rows: int = self.params['num_rows']
+        self.num_operations: int = self.params['num_operations']
+        self.num_concurrent_tasks: int = self.params['num_concurrent_tasks']
+        self.operation_mix: list[float] = self.params['operation_mix']
+        self.keys: list[int] = list(range(self.num_rows))
+        self.requests: list[dict] = []
+        self.responses: list[dict] = []
+        self.balances: dict[(int, str), dict[str, int]] = {}
 
-    async def initialise(self):
-        self.universalis = Universalis(
-            self.UNIVERSALIS_HOST,
-            self.UNIVERSALIS_PORT,
-            ingress_type=IngressTypes.KAFKA,
-            kafka_url=self.KAFKA_URL
-        )
+    @staticmethod
+    def parse_benchmark_parameters():
+        config = configparser.ConfigParser()
+        config.read('workload.ini')
 
-        await self.universalis.submit(g)
-        await asyncio.sleep(2)
-        logging.info('Graph submitted')
+        return {
+            'workload': 'YCSB+T',
+            'num_runs': int(config['Benchmark']['num_runs']),
+            'num_rows': int(config['Benchmark']['num_rows']),
+            'num_operations': int(config['Benchmark']['num_operations']),
+            'num_concurrent_tasks': int(config['Benchmark']['num_concurrent_tasks']),
+            'batch_size': int(config['Benchmark']['batch_size']),
+            'operation_mix': json.loads(config['Benchmark']['operation_mix'])
+        }
+
+    async def initialise_run(self, run_number: int):
+        self.run_number = run_number
+
+        for key in self.keys:
+            self.balances[(self.run_number, str(key))] = {'expected': 100, 'received': 0}
 
     async def insert_records(self):
         logging.info('Inserting')
-        tasks = []
+        async_request_responses = []
 
+        tasks = []
         for i in self.keys:
             tasks.append(
                 self.universalis.send_kafka_event(
@@ -54,67 +72,135 @@ class YcsbBenchmark:
                 )
             )
 
-            if len(tasks) >= self.batch_size:
-                await asyncio.gather(*tasks)
+            if len(tasks) == self.batch_size:
+                async_request_responses += await asyncio.gather(*tasks)
                 tasks = []
 
         if len(tasks) > 0:
-            await asyncio.gather(*tasks)
+            async_request_responses += await asyncio.gather(*tasks)
 
-        logging.info(f'All {self.N_ROWS} Records Inserted')
+        for request in async_request_responses:
+            request_id, timestamp = request
+            self.requests += [{
+                'run_number': self.run_number,
+                'request_id': request_id,
+                'function': 'Insert',
+                'stage': 'insertion',
+                'timestamp': timestamp
+            }]
+
+        logging.info(f'All {self.num_rows} Records Inserted')
         await asyncio.sleep(2)
 
     async def run_transaction_mix(self):
         logging.info('Running Transaction Mix')
-        zipf_gen = ZipfGenerator(items=self.N_ROWS)
+        zipf_gen = ZipfGenerator(items=self.num_rows)
         tasks = []
-        responses = []
+        async_request_responses = []
+        requests_meta: dict[int, str] = {}
 
-        for i in range(self.N_ROWS):
+        for i in range(self.num_operations):
             key = self.keys[next(zipf_gen)]
             op = random.choices(self.operations, weights=self.operation_mix, k=1)[0]
-            self.operation_counts[op] += 1
+            requests_meta[i] = op
 
-            if op == ycsb.Transfer:
+            if op == 'Transfer':
                 key2 = self.keys[next(zipf_gen)]
                 while key2 == key:
                     key2 = self.keys[next(zipf_gen)]
+
+                self.balances[(self.run_number, str(key))]['expected'] -= 1
+                self.balances[(self.run_number, str(key2))]['expected'] += 1
+
                 tasks.append(self.universalis.send_kafka_event(ycsb_operator, key, op, (key, key2)))
+            elif op == 'Update':
+                self.balances[(self.run_number, str(key))]['expected'] += 1
+                tasks.append(self.universalis.send_kafka_event(ycsb_operator, key, op, (key,)))
             else:
                 tasks.append(self.universalis.send_kafka_event(ycsb_operator, key, op, (key,)))
 
-            if len(tasks) >= self.batch_size:
-                task_results = await asyncio.gather(*tasks)
-                responses += task_results
+            if len(tasks) == self.batch_size:
+                async_request_responses += await asyncio.gather(*tasks)
                 tasks = []
 
         if len(tasks) > 0:
-            task_results = await asyncio.gather(*tasks)
-            responses += task_results
+            async_request_responses += await asyncio.gather(*tasks)
 
-        logging.info(self.operation_counts)
+        for i, request in enumerate(async_request_responses):
+            request_id, timestamp = request
+            self.requests += [{
+                'run_number': self.run_number,
+                'request_id': request_id,
+                'function': requests_meta[i],
+                'stage': 'transaction_mix',
+                'timestamp': timestamp
+            }]
+
         logging.info('Transaction Mix Complete')
 
         await asyncio.sleep(1)
-        return responses
 
-    async def cleanup(self):
-        await self.universalis.close()
+    async def run_validation(self):
+        logging.info('Validating')
+        tasks = []
+        async_request_responses = []
 
-    def generate_request_data(self, responses):
-        timestamped_request_ids = {}
+        for i in self.keys:
+            tasks.append(
+                self.universalis.send_kafka_event(
+                    operator=ycsb_operator,
+                    key=i,
+                    function=ycsb.Read,
+                    params=(i,)
+                )
+            )
 
-        for response in responses:
-            request_id, timestamp = response
-            timestamped_request_ids[request_id] = timestamp
+            if len(tasks) == self.batch_size:
+                async_request_responses += await asyncio.gather(*tasks)
+                tasks = []
 
-        requests_filename = os.path.join('./results', 'requests.csv')
-        requests = pd.DataFrame(timestamped_request_ids.items(), columns=['request_id', 'timestamp'])
-        requests.to_csv(requests_filename, index=False)
+        if len(tasks) > 0:
+            async_request_responses += await asyncio.gather(*tasks)
+
+        for request in async_request_responses:
+            request_id, timestamp = request
+            self.requests += [{
+                'run_number': self.run_number,
+                'request_id': request_id,
+                'function': 'Read',
+                'stage': 'validation',
+                'timestamp': timestamp
+            }]
+
+        await asyncio.sleep(1)
+
+    async def cleanup_run(self):
+        pass
 
     async def run(self):
-        await self.initialise()
-        await self.insert_records()
-        responses = await self.run_transaction_mix()
-        await self.cleanup()
-        self.generate_request_data(responses)
+        self.consumer: BenchmarkConsumer = BenchmarkConsumer()
+        asyncio.create_task(self.consumer.run())
+        await self.consumer.consumer_ready_event.wait()
+
+        self.universalis = Universalis(
+            self.UNIVERSALIS_HOST,
+            self.UNIVERSALIS_PORT,
+            ingress_type=IngressTypes.KAFKA,
+            kafka_url=self.KAFKA_URL
+        )
+
+        await self.universalis.submit(g)
+        await asyncio.sleep(2)
+        print('Graph submitted')
+
+        for run_number in range(self.num_runs):
+            await self.initialise_run(run_number)
+            await self.insert_records()
+            await self.run_transaction_mix()
+            await self.run_validation()
+            await self.cleanup_run()
+            self.responses += await self.consumer.get_run_responses()
+
+        await self.consumer.stop()
+        await self.universalis.close()
+        calculate_metrics.calculate(self.requests, self.responses, self.balances, self.params)

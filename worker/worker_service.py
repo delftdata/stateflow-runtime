@@ -12,12 +12,12 @@ import uvloop
 import zmq
 from aiokafka import AIOKafkaConsumer, TopicPartition, AIOKafkaProducer
 from aiokafka.errors import UnknownTopicOrPartitionError, KafkaConnectionError
+
 from universalis.common.local_state_backends import LocalStateBackend
 from universalis.common.logging import logging
 from universalis.common.networking import NetworkingManager
 from universalis.common.operator import Operator
 from universalis.common.serialization import Serializer, msgpack_serialization
-
 from worker.operator_state.in_memory_state import InMemoryOperatorState
 from worker.operator_state.redis_state import RedisOperatorState
 from worker.operator_state.stateless import Stateless
@@ -325,7 +325,7 @@ class Worker:
                         f'abort rate: {abort_rate}'
                     )
 
-                    self.abort_rates.append(abort_rate)
+                    self.abort_rates.append(len(aborts_for_next_epoch))
 
                 elif self.remote_wants_to_commit():
                     await self.handle_nothing_to_commit_case()

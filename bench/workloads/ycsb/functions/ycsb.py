@@ -10,14 +10,14 @@ class Insert(StatefulFunction):
         await self.put(key, 1)
         # return key
         # logging.warning(f'Remote write within transaction: {key} within INSERT')
-        return key
+        return key, 1
 
 
 class Read(StatefulFunction):
     async def run(self, key: str):
         data = await self.get(key)
         # logging.warning(f'Remote read within transaction: {data} within READ')
-        return data
+        return key, data
 
 
 class Update(StatefulFunction):
@@ -26,7 +26,7 @@ class Update(StatefulFunction):
         new_value += 1
 
         await self.put(key, new_value)
-        return key
+        return key, new_value
 
 
 class Transfer(StatefulFunction):
@@ -47,21 +47,25 @@ class Transfer(StatefulFunction):
 
         await self.put(key_a, value_a)
 
-        return key_a
+        return key_a, value_a
 
 
 class Debug(StatefulFunction):
     async def run(self, ins_key: int):
         logging.warning(f'START Remote read within transaction: {ins_key} within DEBUG')
 
-        await self.call_remote_function_no_response('ycsb',
-                                                    Insert,
-                                                    ins_key,
-                                                    (ins_key, ))
+        await self.call_remote_function_no_response(
+            'ycsb',
+            Insert,
+            ins_key,
+            (ins_key,)
+        )
 
-        read_own_remote_write = await self.call_remote_function_request_response('ycsb',
-                                                                                 Read,
-                                                                                 ins_key,
-                                                                                 (ins_key, ))
+        read_own_remote_write = await self.call_remote_function_request_response(
+            'ycsb',
+            Read,
+            ins_key,
+            (ins_key,)
+        )
         logging.warning(f'Remote read within transaction: {read_own_remote_write} within DEBUG')
         return read_own_remote_write

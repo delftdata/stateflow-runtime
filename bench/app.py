@@ -1,25 +1,25 @@
 import asyncio
+import configparser
 
 import uvloop
 
-from common.calculate_metrics import calculate
-from consumer.consumer import BenchmarkConsumer
 from workloads.tpcc.tpcc_benchmark import TpccBenchmark
 from workloads.ycsb.ycsb_benchmark import YcsbBenchmark
 
-tpcc = TpccBenchmark()
-ycsb = YcsbBenchmark()
+config = configparser.ConfigParser()
+config.read('workload.ini')
+workload: str = str(config['Benchmark']['workload'])
 
 
 async def main():
-    tasks = [bench.run(), consumer.main()]
-    await asyncio.gather(*tasks)
-    await asyncio.sleep(5)
-    calculate()
+    if workload == 'ycsb':
+        bench = YcsbBenchmark()
+    else:
+        bench = TpccBenchmark()
+
+    await bench.run()
 
 
 if __name__ == "__main__":
     uvloop.install()
-    bench = tpcc
-    consumer = BenchmarkConsumer()
     asyncio.run(main())

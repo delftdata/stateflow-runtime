@@ -1,14 +1,12 @@
 import asyncio
-import os.path
 import time
 from asyncio import Event, Lock
 
-import pandas as pd
 import uvloop
 from aiokafka import AIOKafkaConsumer
-from universalis.common.serialization import msgpack_deserialization
-
 from common.logging import logging
+
+from universalis.common.serialization import msgpack_deserialization
 
 
 class BenchmarkConsumer:
@@ -17,35 +15,59 @@ class BenchmarkConsumer:
     consumer: AIOKafkaConsumer
 
     def __init__(self):
+        self.consumer_ready_event: asyncio.Event() = Event()
         self.timeout_event: asyncio.Event = Event()
         self.last_message_time_lock: asyncio.Lock = Lock()
         self.last_message_time: float = float('inf')
-        self.records: list[tuple] = []
+        self.responses_lock: asyncio.Lock = Lock()
+        self.responses: list[dict] = []
 
-    async def last_message_timeout(self):
+    async def get_run_responses(self):
+        await self.timeout_event.wait()
+
+        async with self.responses_lock:
+            responses = self.responses
+            self.responses = []
+            return responses
+
+    async def stop(self):
+        await self.consumer.stop()
+
+    async def check_for_timeout(self):
         while True:
+            if self.timeout_event.is_set():
+                self.timeout_event.clear()
+
             async with self.last_message_time_lock:
                 if time.time() - self.last_message_time >= self.LAST_MESSAGE_TIMEOUT:
-                    logging.info(f'{self.LAST_MESSAGE_TIMEOUT} has passed, ending consumer')
+                    logging.info(f'{self.LAST_MESSAGE_TIMEOUT} has passed')
                     self.timeout_event.set()
-                    break
+                    self.last_message_time: float = float('inf')
 
             await asyncio.sleep(1)
 
     async def consume_messages(self):
         logging.warning("Consuming...")
         try:
+            self.consumer_ready_event.set()
+
             async for msg in self.consumer:
-                self.records.append((msg.key, msg.value, msg.timestamp))
+                async with self.responses_lock:
+                    self.responses += [{
+                        'request_id': msg.key,
+                        'response': msg.value,
+                        'timestamp': msg.timestamp,
+                    }]
 
                 async with self.last_message_time_lock:
                     self.last_message_time = time.time()
 
                 await asyncio.sleep(0.001)
         except:
+            self.consumer_ready_event.clear()
             await self.consumer.stop()
 
-    async def main(self):
+    async def run(self):
         self.consumer: AIOKafkaConsumer = AIOKafkaConsumer(
             'universalis-egress',
             key_deserializer=msgpack_deserialization,
@@ -55,19 +77,10 @@ class BenchmarkConsumer:
 
         await self.consumer.start()
         asyncio.create_task(self.consume_messages())
-        asyncio.create_task(self.last_message_timeout())
-        await self.timeout_event.wait()
-
-        # Will leave consumer group; perform autocommit if enabled.
-        logging.info("Writing...")
-        await self.consumer.stop()
-
-        responses = pd.DataFrame.from_records(self.records, columns=['request_id', 'response', 'timestamp'])
-        responses_filename = os.path.join('./results', 'responses.csv')
-        responses.to_csv(responses_filename, index=False)
+        asyncio.create_task(self.check_for_timeout())
 
 
 if __name__ == "__main__":
     uvloop.install()
     bc = BenchmarkConsumer()
-    asyncio.run(bc.main())
+    asyncio.run(bc.run())
