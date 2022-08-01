@@ -2,7 +2,7 @@
 
 To run benchmark:
 
-1. Adjust the `workload.ini` file to the desired parameters
+1. Adjust the `client/workload.ini` file to the desired parameters
 2. Start Kafka: `./start-kafka.sh`
 3. Start Universalis: `./start-universalis.sh`
 4. Start Client: `./start-client.sh`
