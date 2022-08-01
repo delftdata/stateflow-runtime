@@ -50,7 +50,7 @@ class Transfer(StatefulFunction):
 
         await self.put(key_a, value_a)
 
-        return key_a, value_a
+        return (key_a, value_a)
 
 
 class Debug(StatefulFunction):

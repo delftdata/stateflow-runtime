@@ -4,8 +4,8 @@ from asyncio import Event, Lock
 
 import uvloop
 from aiokafka import AIOKafkaConsumer
-from common.logging import logging
 
+from common.logging import logging
 from universalis.common.serialization import msgpack_deserialization
 
 
@@ -40,7 +40,7 @@ class BenchmarkConsumer:
 
             async with self.last_message_time_lock:
                 if time.time() - self.last_message_time >= self.LAST_MESSAGE_TIMEOUT:
-                    logging.info(f'{self.LAST_MESSAGE_TIMEOUT} has passed')
+                    logging.info(f'{self.LAST_MESSAGE_TIMEOUT} has passed, outputting responses')
                     self.timeout_event.set()
                     self.last_message_time: float = float('inf')
 

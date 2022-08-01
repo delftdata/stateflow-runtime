@@ -59,60 +59,22 @@ class YcsbBenchmark:
 
     async def insert_records(self):
         async_request_responses = []
+        requests_meta: dict[int, (str, tuple)] = {}
 
         tasks = []
         for i in self.keys:
+            params: tuple = (i,)
+
             tasks.append(
                 self.universalis.send_kafka_event(
                     operator=ycsb_operator,
                     key=i,
                     function=ycsb.Insert,
-                    params=(i,)
+                    params=params
                 )
             )
 
-            if len(tasks) == self.batch_size:
-                async_request_responses += await asyncio.gather(*tasks)
-                tasks = []
-
-        if len(tasks) > 0:
-            async_request_responses += await asyncio.gather(*tasks)
-
-        for request in async_request_responses:
-            request_id, timestamp = request
-            self.requests += [{
-                'run_number': self.run_number,
-                'request_id': request_id,
-                'function': 'Insert',
-                'stage': 'insertion',
-                'timestamp': timestamp
-            }]
-
-    async def run_transaction_mix(self):
-        zipf_gen = ZipfGenerator(items=self.num_rows)
-        tasks = []
-        async_request_responses = []
-        requests_meta: dict[int, str] = {}
-
-        for i in range(self.num_operations):
-            key = self.keys[next(zipf_gen)]
-            op = random.choices(self.operations, weights=self.operation_mix, k=1)[0]
-            requests_meta[i] = op
-
-            if op == 'Transfer':
-                key2 = self.keys[next(zipf_gen)]
-                while key2 == key:
-                    key2 = self.keys[next(zipf_gen)]
-
-                self.balances[(self.run_number, str(key))]['expected'] -= 1
-                self.balances[(self.run_number, str(key2))]['expected'] += 1
-
-                tasks.append(self.universalis.send_kafka_event(ycsb_operator, key, op, (key, key2)))
-            elif op == 'Update':
-                self.balances[(self.run_number, str(key))]['expected'] += 1
-                tasks.append(self.universalis.send_kafka_event(ycsb_operator, key, op, (key,)))
-            else:
-                tasks.append(self.universalis.send_kafka_event(ycsb_operator, key, op, (key,)))
+            requests_meta[i] = ('Insert', params)
 
             if len(tasks) == self.batch_size:
                 async_request_responses += await asyncio.gather(*tasks)
@@ -126,24 +88,42 @@ class YcsbBenchmark:
             self.requests += [{
                 'run_number': self.run_number,
                 'request_id': request_id,
-                'function': requests_meta[i],
-                'stage': 'transaction_mix',
+                'function': requests_meta[i][0],
+                'params': requests_meta[i][1],
+                'stage': 'insertion',
                 'timestamp': timestamp
             }]
 
-    async def run_validation(self):
+    async def run_transaction_mix(self):
+        zipf_gen = ZipfGenerator(items=self.num_rows)
         tasks = []
         async_request_responses = []
+        requests_meta: dict[int, (str, tuple)] = {}
 
-        for i in self.keys:
-            tasks.append(
-                self.universalis.send_kafka_event(
-                    operator=ycsb_operator,
-                    key=i,
-                    function=ycsb.Read,
-                    params=(i,)
-                )
-            )
+        for i in range(self.num_operations):
+            key = self.keys[next(zipf_gen)]
+            op = random.choices(self.operations, weights=self.operation_mix, k=1)[0]
+            params: tuple
+
+            if op == 'Transfer':
+                key2 = self.keys[next(zipf_gen)]
+                while key2 == key:
+                    key2 = self.keys[next(zipf_gen)]
+
+                self.balances[(self.run_number, str(key))]['expected'] -= 1
+                self.balances[(self.run_number, str(key2))]['expected'] += 1
+
+                params = (key, key2)
+                tasks.append(self.universalis.send_kafka_event(ycsb_operator, key, op, params))
+            elif op == 'Update':
+                self.balances[(self.run_number, str(key))]['expected'] += 1
+                params = (key,)
+                tasks.append(self.universalis.send_kafka_event(ycsb_operator, key, op, params))
+            else:
+                params = (key,)
+                tasks.append(self.universalis.send_kafka_event(ycsb_operator, key, op, params))
+
+            requests_meta[i] = (op, params)
 
             if len(tasks) == self.batch_size:
                 async_request_responses += await asyncio.gather(*tasks)
@@ -152,12 +132,50 @@ class YcsbBenchmark:
         if len(tasks) > 0:
             async_request_responses += await asyncio.gather(*tasks)
 
-        for request in async_request_responses:
+        for i, request in enumerate(async_request_responses):
             request_id, timestamp = request
             self.requests += [{
                 'run_number': self.run_number,
                 'request_id': request_id,
-                'function': 'Read',
+                'function': requests_meta[i][0],
+                'params': requests_meta[i][1],
+                'stage': 'transaction_mix',
+                'timestamp': timestamp
+            }]
+
+    async def run_validation(self):
+        tasks = []
+        async_request_responses = []
+        requests_meta: dict[int, (str, tuple)] = {}
+
+        for i in self.keys:
+            params: tuple = (i,)
+
+            tasks.append(
+                self.universalis.send_kafka_event(
+                    operator=ycsb_operator,
+                    key=i,
+                    function=ycsb.Read,
+                    params=params
+                )
+            )
+
+            requests_meta[i] = ('Read', params)
+
+            if len(tasks) == self.batch_size:
+                async_request_responses += await asyncio.gather(*tasks)
+                tasks = []
+
+        if len(tasks) > 0:
+            async_request_responses += await asyncio.gather(*tasks)
+
+        for i, request in enumerate(async_request_responses):
+            request_id, timestamp = request
+            self.requests += [{
+                'run_number': self.run_number,
+                'request_id': request_id,
+                'function': requests_meta[i][0],
+                'params': requests_meta[i][1],
                 'stage': 'validation',
                 'timestamp': timestamp
             }]
@@ -182,34 +200,35 @@ class YcsbBenchmark:
         await asyncio.sleep(2)
 
         for run_number in range(self.num_runs):
-            logging.info(f'Initialising run {run_number}...')
+            logging.info(f'Run {run_number} - Initialising run...')
             await self.initialise_run(run_number)
-            logging.info('Initialised')
+            logging.info(f'Run {run_number} - Initialised')
             await asyncio.sleep(1)
 
-            logging.info('Inserting records...')
+            logging.info(f'Run {run_number} - Inserting records...')
             await self.insert_records()
-            logging.info('Finished inserting')
+            logging.info(f'Run {run_number} - Finished inserting')
             await asyncio.sleep(2)
 
-            logging.info('Running transaction mix...')
+            logging.info(f'Run {run_number} - Running transaction mix...')
             await self.run_transaction_mix()
-            logging.info('Finished running transaction mix')
+            logging.info(f'Run {run_number} - Finished running transaction mix')
             await asyncio.sleep(2)
 
-            logging.info('Running validation...')
+            logging.info(f'Run {run_number} - Running validation...')
             await self.run_validation()
-            logging.info('Finished validation')
+            logging.info(f'Run {run_number} - Finished validation')
             await asyncio.sleep(2)
 
-            logging.info('Cleaning up...')
+            logging.info(f'Run {run_number} - Cleaning up...')
             await self.cleanup_run()
-            logging.info('Cleaned up')
-            await asyncio.sleep(1)
-            self.responses += await self.consumer.get_run_responses()
+            logging.info(f'Run {run_number} - Cleaned up')
 
-            logging.info(f'Run {run_number} completed')
+            self.responses += await self.consumer.get_run_responses()
+            logging.info(f'Run {run_number} - Complete')
 
         await self.consumer.stop()
         await self.universalis.close()
+
+        await asyncio.sleep(5)
         calculate_metrics.calculate(self.requests, self.responses, self.balances, self.params)

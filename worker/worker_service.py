@@ -34,7 +34,7 @@ EPOCH_INTERVAL: float = 0.01  # 10ms
 SEQUENCE_MAX_SIZE: int = 100
 DETERMINISTIC_REORDERING: bool = True
 FALLBACK_STRATEGY_PERCENTAGE: float = 0.1  # if more than 10% aborts use fallback strategy
-ABORT_RATE_OUTPUT_INTERVAL = 5  # How long to wait after epoch end to output to file
+ABORT_RATE_OUTPUT_INTERVAL = 10  # How long to wait after epoch end to output to file
 
 
 class Worker:
