@@ -7,14 +7,12 @@ import time
 from datetime import datetime
 from typing import Type
 
+from common.concurrency import gather_with_concurrency_limit
 from universalis.common.operator import Operator
 from universalis.universalis import Universalis
-
-from common.logging import logging
 from workloads.tpcc.functions import customer, district
 from workloads.tpcc.functions.graph import customer_operator, district_operator
 from workloads.tpcc.util import rand, constants
-from workloads.tpcc.util.benchmark_parameters import BenchmarkParameters
 from workloads.tpcc.util.key import tuple_to_composite
 from workloads.tpcc.util.scale_parameters import ScaleParameters
 
@@ -22,42 +20,60 @@ from workloads.tpcc.util.scale_parameters import ScaleParameters
 class Executor:
     def __init__(
             self,
-            benchmark_parameters: BenchmarkParameters,
+            benchmark_parameters: dict,
             scale_parameters: ScaleParameters,
             universalis: Universalis
     ):
-        self.benchmark_parameters: BenchmarkParameters = benchmark_parameters
+        self.num_concurrent_tasks = benchmark_parameters['num_concurrent_tasks']
+        self.benchmark_duration = benchmark_parameters['benchmark_duration']
+        self.executor_batch_size = benchmark_parameters['executor_batch_size']
+        self.executor_batch_wait_time = benchmark_parameters['executor_batch_wait_time']
         self.scale_parameters: ScaleParameters = scale_parameters
         self.universalis: Universalis = universalis
 
-    async def execute_transactions(self):
+    async def execute_transactions(self, run_number: int):
         tasks = []
         start = time.time()
-        responses = []
-        fun_cnts: dict = {district.NewOrder: 0, customer.Payment: 0}
+        async_request_responses = []
+        requests = []
+        requests_meta: dict[int, (str, tuple)] = {}
+        req_cnt: int = 0
 
-        while (time.time() - start) <= self.benchmark_parameters.benchmark_duration:
+        while (time.time() - start) <= self.benchmark_duration:
             choice = rand.number(1, 100)
 
             if choice <= 49:
                 operator, key, fun, params = self.generate_payment_params()
-                fun_cnts[fun] += 1
+                func_str = 'Payment'
             else:
                 operator, key, fun, params = self.generate_new_order_params()
-                fun_cnts[fun] += 1
+                func_str = 'NewOrder'
 
-            tasks.append(self.universalis.send_kafka_event(operator, key, fun, (key, params,)))
+            tasks.append(self.universalis.send_kafka_event(operator, key, fun, (key, params)))
 
-            if len(tasks) == self.benchmark_parameters.executor_batch_size:
-                responses += await asyncio.gather(*tasks)
+            if len(tasks) == self.executor_batch_size:
+                async_request_responses += await gather_with_concurrency_limit(self.num_concurrent_tasks, *tasks)
                 tasks = []
-                await asyncio.sleep(self.benchmark_parameters.executor_batch_wait_time)
+                await asyncio.sleep(self.executor_batch_wait_time)
+
+            requests_meta[req_cnt] = (func_str, (key, params))
+            req_cnt += 1
 
         if len(tasks) > 0:
-            responses += await asyncio.gather(*tasks)
+            async_request_responses += await gather_with_concurrency_limit(self.num_concurrent_tasks, *tasks)
 
-        logging.info(fun_cnts)
-        return responses
+        for i, request in enumerate(async_request_responses):
+            request_id, timestamp = request
+            requests += [{
+                'run_number': run_number,
+                'request_id': request_id,
+                'function': requests_meta[i][0],
+                'params': requests_meta[i][1],
+                'stage': 'transaction_mix',
+                'timestamp': timestamp
+            }]
+
+        return requests
 
     def generate_new_order_params(self) -> tuple[Operator, str, Type, dict]:
         """Return parameters for NEW_ORDER"""

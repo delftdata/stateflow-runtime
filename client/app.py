@@ -3,8 +3,8 @@ import configparser
 
 import uvloop
 
-from workloads.tpcc.tpcc_benchmark import TpccBenchmark
-from workloads.ycsb.ycsb_benchmark import YcsbBenchmark
+from workloads.tpcc.tpcc_workload import TpccWorkload
+from workloads.ycsb.ycsb_workload import YcsbWorkload
 
 config = configparser.ConfigParser()
 config.read('workload.ini')
@@ -13,9 +13,9 @@ workload: str = str(config['Benchmark']['workload'])
 
 async def main():
     if workload == 'ycsb':
-        bench = YcsbBenchmark()
+        bench = YcsbWorkload()
     else:
-        bench = TpccBenchmark()
+        bench = TpccWorkload()
 
     await bench.run()
 

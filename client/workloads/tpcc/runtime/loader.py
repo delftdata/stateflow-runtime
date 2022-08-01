@@ -9,7 +9,6 @@ import random
 from datetime import datetime
 
 from universalis.universalis import Universalis
-
 from workloads.tpcc.functions import item, warehouse, customer, history, order, order_line, new_order, district, stock
 from workloads.tpcc.functions.graph import (
     item_operator,
@@ -19,7 +18,6 @@ from workloads.tpcc.functions.graph import (
     order_operator, order_line_operator, new_order_operator, district_operator, stock_operator,
 )
 from workloads.tpcc.util import rand, constants
-from workloads.tpcc.util.benchmark_parameters import BenchmarkParameters
 from workloads.tpcc.util.key import tuple_to_composite
 from workloads.tpcc.util.scale_parameters import ScaleParameters
 
@@ -27,24 +25,28 @@ from workloads.tpcc.util.scale_parameters import ScaleParameters
 class Loader:
     def __init__(
             self,
-            benchmark_parameters: BenchmarkParameters,
+            benchmark_parameters: dict,
             scale_parameters: ScaleParameters,
             w_ids: list[int],
             universalis: Universalis,
     ):
-        self.benchmark_parameters = benchmark_parameters
+        self.loader_batch_size = benchmark_parameters['loader_batch_size']
+        self.loader_batch_wait_time = benchmark_parameters['loader_batch_wait_time']
         self.scale_parameters = scale_parameters
         self.w_ids: w_ids = w_ids
         self.universalis: Universalis = universalis
 
-    async def execute(self):
-        await self.load_items()
-        await asyncio.sleep(self.benchmark_parameters.loader_batch_wait_time)
+    async def execute(self, run_number: int):
+        requests = []
+        requests += await self.load_items(run_number)
+        await asyncio.sleep(self.loader_batch_wait_time)
 
         for w_id in self.w_ids:
-            await self.load_warehouse(w_id)
+            requests += await self.load_warehouse(w_id, run_number)
 
-    async def load_items(self):
+        return requests
+
+    async def load_items(self, run_number: int):
         # Select 10% of the rows to be marked "original"
         original_rows = rand.select_unique_ids(
             round(self.scale_parameters.items / 10),
@@ -55,6 +57,10 @@ class Loader:
         # Load all of the items
         tasks = []
         total_tuples = 0
+        async_request_responses = []
+        requests = []
+        requests_meta: dict[int, (str, tuple)] = {}
+        req_cnt: int = 0
 
         for i_id in range(1, self.scale_parameters.items + 1):
             original = (i_id in original_rows)
@@ -70,29 +76,52 @@ class Loader:
             )
             total_tuples += 1
 
-            if len(tasks) == self.benchmark_parameters.loader_batch_size:
-                await asyncio.gather(*tasks)
+            requests_meta[req_cnt] = ('InsertItem', (key, params))
+            req_cnt += 1
+
+            if len(tasks) == self.loader_batch_size:
+                async_request_responses += await asyncio.gather(*tasks)
                 tasks = []
-                await asyncio.sleep(self.benchmark_parameters.loader_batch_wait_time)
+                await asyncio.sleep(self.loader_batch_wait_time)
                 logging.info(
                     "LOAD - %s: %5d / %d" % (constants.TABLENAME_ITEM, total_tuples, self.scale_parameters.items)
                 )
 
         if len(tasks) > 0:
-            await asyncio.gather(*tasks)
+            async_request_responses += await asyncio.gather(*tasks)
             logging.info("LOAD - %s: %5d / %d" % (constants.TABLENAME_ITEM, total_tuples, self.scale_parameters.items))
 
-    async def load_warehouse(self, w_id: int):
+        for i, request in enumerate(async_request_responses):
+            request_id, timestamp = request
+            requests += [{
+                'run_number': run_number,
+                'request_id': request_id,
+                'function': requests_meta[i][0],
+                'params': requests_meta[i][1],
+                'stage': 'insertion',
+                'timestamp': timestamp
+            }]
+
+        return requests
+
+    async def load_warehouse(self, w_id: int, run_number: int):
         logging.info("LOAD - %s: %d / %d" % (constants.TABLENAME_WAREHOUSE, w_id, len(self.w_ids)))
+        async_request_responses = []
+        requests = []
+        requests_meta: dict[int, (str, tuple)] = {}
+        req_cnt: int = 0
 
         # WAREHOUSE
         key, params = self.generate_warehouse(w_id)
-        await self.universalis.send_kafka_event(
+        async_request_responses += [await self.universalis.send_kafka_event(
             warehouse_operator,
             key,
             warehouse.InsertWarehouse,
             (key, params)
-        )
+        )]
+
+        requests_meta[req_cnt] = ('InsertWarehouse', (key, params))
+        req_cnt += 1
 
         # DISTRICT
         for d_id in range(1, self.scale_parameters.districts_per_warehouse + 1):
@@ -126,9 +155,12 @@ class Loader:
                     )
                 )
 
-                if len(c_tasks) == self.benchmark_parameters.loader_batch_size:
-                    await asyncio.gather(*c_tasks)
-                    await asyncio.sleep(self.benchmark_parameters.loader_batch_wait_time)
+                requests_meta[req_cnt] = ('InsertCustomer', (key, params))
+                req_cnt += 1
+
+                if len(c_tasks) == self.loader_batch_size:
+                    async_request_responses += await asyncio.gather(*c_tasks)
+                    await asyncio.sleep(self.loader_batch_wait_time)
                     c_tasks = []
 
                 key, params = self.generate_history(w_id, d_id, c_id)
@@ -141,9 +173,12 @@ class Loader:
                     )
                 )
 
-                if len(h_tasks) == self.benchmark_parameters.loader_batch_size:
-                    await asyncio.gather(*h_tasks)
-                    await asyncio.sleep(self.benchmark_parameters.loader_batch_wait_time)
+                requests_meta[req_cnt] = ('InsertHistory', (key, params))
+                req_cnt += 1
+
+                if len(h_tasks) == self.loader_batch_size:
+                    async_request_responses += await asyncio.gather(*h_tasks)
+                    await asyncio.sleep(self.loader_batch_wait_time)
                     h_tasks = []
 
                 c_id_permutation.append(c_id)
@@ -177,9 +212,12 @@ class Loader:
                     )
                 )
 
-                if len(o_tasks) > self.benchmark_parameters.loader_batch_size:
-                    await asyncio.gather(*o_tasks)
-                    await asyncio.sleep(self.benchmark_parameters.loader_batch_wait_time)
+                requests_meta[req_cnt] = ('InsertOrder', (key, params))
+                req_cnt += 1
+
+                if len(o_tasks) > self.loader_batch_size:
+                    async_request_responses += await asyncio.gather(*o_tasks)
+                    await asyncio.sleep(self.loader_batch_wait_time)
                     o_tasks = []
 
                 # Generate each order_line for the order
@@ -202,9 +240,12 @@ class Loader:
                         )
                     )
 
-                    if len(ol_tasks) > self.benchmark_parameters.loader_batch_size:
-                        await asyncio.gather(*ol_tasks)
-                        await asyncio.sleep(self.benchmark_parameters.loader_batch_wait_time)
+                    requests_meta[req_cnt] = ('InsertOrderLine', (key, params))
+                    req_cnt += 1
+
+                    if len(ol_tasks) > self.loader_batch_size:
+                        async_request_responses += await asyncio.gather(*ol_tasks)
+                        await asyncio.sleep(self.loader_batch_wait_time)
                         ol_tasks = []
 
                 # This is a new order: make one for it
@@ -219,35 +260,41 @@ class Loader:
                         )
                     )
 
-                    if len(no_tasks) > self.benchmark_parameters.loader_batch_size:
-                        await asyncio.gather(*no_tasks)
-                        await asyncio.sleep(self.benchmark_parameters.loader_batch_wait_time)
+                    requests_meta[req_cnt] = ('InsertNewOrder', (key, params))
+                    req_cnt += 1
+
+                    if len(no_tasks) > self.loader_batch_size:
+                        async_request_responses += await asyncio.gather(*no_tasks)
+                        await asyncio.sleep(self.loader_batch_wait_time)
                         no_tasks = []
 
             key, params = self.generate_district(w_id, d_id, d_next_o_id)
 
-            await self.universalis.send_kafka_event(
+            async_request_responses += [await self.universalis.send_kafka_event(
                 district_operator,
                 key,
                 district.InsertDistrict,
                 (key, params)
-            )
+            )]
+
+            requests_meta[req_cnt] = ('InsertDistrict', (key, params))
+            req_cnt += 1
 
             if len(c_tasks) > 0:
-                await asyncio.gather(*c_tasks)
-                await asyncio.sleep(self.benchmark_parameters.loader_batch_wait_time)
+                async_request_responses += await asyncio.gather(*c_tasks)
+                await asyncio.sleep(self.loader_batch_wait_time)
             if len(h_tasks) > 0:
-                await asyncio.gather(*h_tasks)
-                await asyncio.sleep(self.benchmark_parameters.loader_batch_wait_time)
+                async_request_responses += await asyncio.gather(*h_tasks)
+                await asyncio.sleep(self.loader_batch_wait_time)
             if len(o_tasks) > 0:
-                await asyncio.gather(*o_tasks)
-                await asyncio.sleep(self.benchmark_parameters.loader_batch_wait_time)
+                async_request_responses += await asyncio.gather(*o_tasks)
+                await asyncio.sleep(self.loader_batch_wait_time)
             if len(ol_tasks) > 0:
-                await asyncio.gather(*ol_tasks)
-                await asyncio.sleep(self.benchmark_parameters.loader_batch_wait_time)
+                async_request_responses += await asyncio.gather(*ol_tasks)
+                await asyncio.sleep(self.loader_batch_wait_time)
             if len(no_tasks) > 0:
-                await asyncio.gather(*no_tasks)
-                await asyncio.sleep(self.benchmark_parameters.loader_batch_wait_time)
+                async_request_responses += await asyncio.gather(*no_tasks)
+                await asyncio.sleep(self.loader_batch_wait_time)
 
             logging.info(
                 "LOAD - %s: %d / %d" % (
@@ -272,14 +319,16 @@ class Loader:
                 )
             )
             total_tuples += 1
+            requests_meta[req_cnt] = ('InsertStock', (key, params))
+            req_cnt += 1
 
-            if len(s_tasks) == self.benchmark_parameters.loader_batch_size:
+            if len(s_tasks) == self.loader_batch_size:
                 logging.info(
                     "LOAD - %s [W_ID=%d]: %5d / %d" % (
                         constants.TABLENAME_STOCK, w_id, total_tuples, self.scale_parameters.items)
                 )
 
-                await asyncio.gather(*s_tasks)
+                async_request_responses += await asyncio.gather(*s_tasks)
                 s_tasks = []
 
         if len(s_tasks) > 0:
@@ -287,7 +336,20 @@ class Loader:
                 "LOAD - %s [W_ID=%d]: %5d / %d" % (
                     constants.TABLENAME_STOCK, w_id, total_tuples, self.scale_parameters.items)
             )
-            await asyncio.gather(*s_tasks)
+            async_request_responses += await asyncio.gather(*s_tasks)
+
+        for i, request in enumerate(async_request_responses):
+            request_id, timestamp = request
+            requests += [{
+                'run_number': run_number,
+                'request_id': request_id,
+                'function': requests_meta[i][0],
+                'params': requests_meta[i][1],
+                'stage': 'insertion',
+                'timestamp': timestamp
+            }]
+
+        return requests
 
     def generate_item(self, i_id: int, original: bool) -> tuple[str, dict[str, int | float | str]]:
         key: str = str(i_id)

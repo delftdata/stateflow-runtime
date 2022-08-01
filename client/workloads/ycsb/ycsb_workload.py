@@ -3,37 +3,24 @@ import configparser
 import json
 import random
 
-import workloads
-from common.logging import logging
-from consumer.consumer import BenchmarkConsumer
-from universalis.common.stateflow_ingress import IngressTypes
-from universalis.universalis import Universalis
+from common.concurrency import gather_with_concurrency_limit
+from common.workload import Workload
+from workloads.ycsb import results
 from workloads.ycsb.functions import ycsb
 from workloads.ycsb.functions.graph import ycsb_operator, g
-from workloads.ycsb.util import calculate_metrics
 from workloads.ycsb.util.zipfian_generator import ZipfGenerator
 
 
-class YcsbBenchmark:
-    UNIVERSALIS_HOST: str = 'localhost'
-    UNIVERSALIS_PORT: int = 8886
-    KAFKA_URL = 'localhost:9093'
-    consumer: BenchmarkConsumer()
-    universalis: Universalis
+class YcsbWorkload(Workload):
     operations: list[str] = ['Read', 'Update', 'Transfer']
-    run_number: int
 
     def __init__(self):
-        self.params = self.parse_benchmark_parameters()
-        self.num_runs = self.params['num_runs']
-        self.batch_size: int = self.params['batch_size']
+        super().__init__()
+        self.graph = g
         self.num_rows: int = self.params['num_rows']
+        self.batch_size: int = self.params['batch_size']
         self.num_operations: int = self.params['num_operations']
-        self.num_concurrent_tasks: int = self.params['num_concurrent_tasks']
-        self.operation_mix: list[float] = self.params['operation_mix']
         self.keys: list[int] = list(range(self.num_rows))
-        self.requests: list[dict] = []
-        self.responses: list[dict] = []
         self.balances: dict[(int, str), dict[str, int]] = {}
 
     @staticmethod
@@ -51,16 +38,7 @@ class YcsbBenchmark:
             'operation_mix': json.loads(config['Benchmark']['operation_mix'])
         }
 
-    async def gather_with_concurrency(self, *tasks):
-        semaphore = asyncio.Semaphore(self.num_concurrent_tasks)
-
-        async def sem_task(task):
-            async with semaphore:
-                return await task
-
-        return await asyncio.gather(*(sem_task(task) for task in tasks))
-
-    async def initialise_run(self, run_number: int):
+    async def init_run(self, run_number):
         self.run_number = run_number
 
         for key in self.keys:
@@ -135,11 +113,11 @@ class YcsbBenchmark:
             requests_meta[i] = (op, params)
 
             if len(tasks) == self.batch_size:
-                async_request_responses += await self.gather_with_concurrency(*tasks)
+                async_request_responses += await gather_with_concurrency_limit(self.num_concurrent_tasks, *tasks)
                 tasks = []
 
         if len(tasks) > 0:
-            async_request_responses += await self.gather_with_concurrency(*tasks)
+            async_request_responses += await gather_with_concurrency_limit(self.num_concurrent_tasks, *tasks)
 
         for i, request in enumerate(async_request_responses):
             request_id, timestamp = request
@@ -189,55 +167,5 @@ class YcsbBenchmark:
                 'timestamp': timestamp
             }]
 
-    async def cleanup_run(self):
-        # Not needed
-        pass
-
-    async def run(self):
-        self.consumer: BenchmarkConsumer = BenchmarkConsumer()
-        asyncio.create_task(self.consumer.run())
-        await self.consumer.consumer_ready_event.wait()
-
-        self.universalis = Universalis(
-            self.UNIVERSALIS_HOST,
-            self.UNIVERSALIS_PORT,
-            ingress_type=IngressTypes.KAFKA,
-            kafka_url=self.KAFKA_URL
-        )
-
-        await self.universalis.submit(g, (workloads,))
-        await asyncio.sleep(2)
-
-        for run_number in range(self.num_runs):
-            logging.info(f'Run {run_number} - Initialising run...')
-            await self.initialise_run(run_number)
-            logging.info(f'Run {run_number} - Initialised')
-            await asyncio.sleep(1)
-
-            logging.info(f'Run {run_number} - Inserting records...')
-            await self.insert_records()
-            logging.info(f'Run {run_number} - Finished inserting')
-            await asyncio.sleep(2)
-
-            logging.info(f'Run {run_number} - Running transaction mix...')
-            await self.run_transaction_mix()
-            logging.info(f'Run {run_number} - Finished running transaction mix')
-            await asyncio.sleep(2)
-
-            logging.info(f'Run {run_number} - Running validation...')
-            await self.run_validation()
-            logging.info(f'Run {run_number} - Finished validation')
-            await asyncio.sleep(2)
-
-            logging.info(f'Run {run_number} - Cleaning up...')
-            await self.cleanup_run()
-            logging.info(f'Run {run_number} - Cleaned up')
-
-            self.responses += await self.consumer.get_run_responses()
-            logging.info(f'Run {run_number} - Complete')
-
-        await self.consumer.stop()
-        await self.universalis.close()
-
-        await asyncio.sleep(5)
-        calculate_metrics.calculate(self.requests, self.responses, self.balances, self.params)
+    def generate_metrics(self):
+        results.calculate(self.requests, self.responses, self.balances, self.params)
