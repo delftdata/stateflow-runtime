@@ -51,6 +51,15 @@ class YcsbBenchmark:
             'operation_mix': json.loads(config['Benchmark']['operation_mix'])
         }
 
+    async def gather_with_concurrency(self, *tasks):
+        semaphore = asyncio.Semaphore(self.num_concurrent_tasks)
+
+        async def sem_task(task):
+            async with semaphore:
+                return await task
+
+        return await asyncio.gather(*(sem_task(task) for task in tasks))
+
     async def initialise_run(self, run_number: int):
         self.run_number = run_number
 
@@ -126,11 +135,11 @@ class YcsbBenchmark:
             requests_meta[i] = (op, params)
 
             if len(tasks) == self.batch_size:
-                async_request_responses += await asyncio.gather(*tasks)
+                async_request_responses += await self.gather_with_concurrency(*tasks)
                 tasks = []
 
         if len(tasks) > 0:
-            async_request_responses += await asyncio.gather(*tasks)
+            async_request_responses += await self.gather_with_concurrency(*tasks)
 
         for i, request in enumerate(async_request_responses):
             request_id, timestamp = request

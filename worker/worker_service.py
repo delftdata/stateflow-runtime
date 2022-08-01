@@ -2,6 +2,7 @@ import asyncio
 import itertools
 import os
 import time
+from os.path import exists
 from timeit import default_timer as timer
 from typing import Any
 
@@ -34,7 +35,7 @@ EPOCH_INTERVAL: float = 0.01  # 10ms
 SEQUENCE_MAX_SIZE: int = 100
 DETERMINISTIC_REORDERING: bool = True
 FALLBACK_STRATEGY_PERCENTAGE: float = 0.1  # if more than 10% aborts use fallback strategy
-ABORT_RATE_OUTPUT_INTERVAL = 10  # How long to wait after epoch end to output to file
+ABORT_RATE_OUTPUT_INTERVAL = 5  # How long to wait after epoch end to output to file
 
 
 class Worker:
@@ -332,12 +333,19 @@ class Worker:
                     await self.handle_nothing_to_commit_case()
 
                 if self.abort_rates and (timer() - epoch_end) > ABORT_RATE_OUTPUT_INTERVAL:
-                    logging.warning('Writing abort rates to file')
-                    df = pd.DataFrame(self.abort_rates, columns=['abort_rate'])
                     abort_rate_filename = os.path.join(
                         '/usr/local/universalis/results',
                         f'abort_rates_worker_{self.id}.csv'
                     )
+
+                    if exists(abort_rate_filename):
+                        df = pd.read_csv(abort_rate_filename)
+                        new_df = pd.DataFrame(self.abort_rates, columns=['abort_rate'])
+                        df = pd.concat([df, new_df])
+                    else:
+                        df = pd.DataFrame(self.abort_rates, columns=['abort_rate'])
+
+                    logging.warning('Writing abort rates to file')
                     df.to_csv(abort_rate_filename, index=False)
                     self.abort_rates = []
 
