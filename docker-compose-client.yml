@@ -1,0 +1,13 @@
+version: "3"
+services:
+  client:
+    build:
+      context: .
+      dockerfile: client/client.dockerfile
+    image: client:latest
+    volumes:
+      - ./client/results:/usr/local/benchmark/client/results
+    command: python app.py
+    env_file:
+      - client/.env
+    network_mode: 'host'

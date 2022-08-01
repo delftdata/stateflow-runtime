@@ -1,4 +1,5 @@
 import asyncio
+import os
 from abc import abstractmethod, ABC
 
 import workloads
@@ -10,9 +11,6 @@ from universalis.universalis import Universalis
 
 
 class Workload(ABC):
-    UNIVERSALIS_HOST: str = 'localhost'
-    UNIVERSALIS_PORT: int = 8886
-    KAFKA_URL = 'localhost:9093'
     consumer: BenchmarkConsumer
     graph: StateflowGraph
     run_number: int
@@ -25,10 +23,10 @@ class Workload(ABC):
         self.requests: list[dict] = []
         self.responses: list[dict] = []
         self.universalis = Universalis(
-            self.UNIVERSALIS_HOST,
-            self.UNIVERSALIS_PORT,
+            os.environ['UNIVERSALIS_HOST'],
+            int(os.environ['UNIVERSALIS_PORT']),
             ingress_type=IngressTypes.KAFKA,
-            kafka_url=self.KAFKA_URL
+            kafka_url=os.environ['KAFKA_URL']
         )
 
     async def init_consumer(self):
