@@ -5,15 +5,16 @@ import re
 
 import numpy as np
 import pandas as pd
+
 from common.logging import logging
 
 
 def calculate_consistency_metrics(
-        results: pd.DataFrame,
+        verification_results: dict,
         balances: dict[(int, str), dict[str, int]],
-        num_operations: int
+        num_operations: int,
+        num_missed_messages: int,
 ):
-    verification_results = results[results['stage'] == 'validation'].to_dict('index')
 
     for result in verification_results.values():
         key, value = result['response']
@@ -34,6 +35,7 @@ def calculate_consistency_metrics(
     inconsistency_metrics['anomaly_score'] = (total_expected - total_received) / num_operations
     inconsistency_metrics['total_received'] = total_received
     inconsistency_metrics['total_expected'] = total_expected
+    inconsistency_metrics['missed_messages'] = num_missed_messages
 
     return [inconsistency_metrics]
 
@@ -94,27 +96,27 @@ def calculate_throughput_metrics(raw_results: pd.DataFrame):
     }]
 
 
-def calculate_abort_rate_metrics(num_operations: int):
+def calculate_abort_rate_metrics():
     worker_abort_rate_files = pathlib.Path('./results')
+    worker_metrics = {}
     abort_rate_metrics = {}
 
     for worker_file in worker_abort_rate_files.glob('abort_rates_worker_[0-9]*.csv'):
         try:
             worker_id = re.findall('\d+', worker_file.stem)[0]
-            abort_rate_metrics[worker_id] = pd.read_csv(worker_file)
+            worker_metrics[worker_id] = pd.read_csv(worker_file)
 
         except AttributeError:
             logging.info(f'{worker_file} could not be processed')
         finally:
             os.remove(worker_file)
 
-    abort_rates = pd.concat(abort_rate_metrics) \
+    abort_rates = pd.concat(worker_metrics) \
         .rename_axis(['id', None]) \
         .reset_index(level='id') \
         .rename(columns={'id': 'worker_id'})
 
-    total_abort_rate = abort_rates['abort_rate'].sum()
-    abort_rate_metrics['abort_rate'] = total_abort_rate / num_operations
+    abort_rate_metrics['abort_rate'] = abort_rates['abort_rate'].mean()
     abort_rate_metrics['abort_rate_%'] = abort_rate_metrics['abort_rate'] * 100
 
     return abort_rate_metrics
@@ -132,8 +134,12 @@ def check_for_missed_messages(results: pd.DataFrame):
     else:
         print('\nNO MISSED MESSAGES!\n')
 
+    return len(missed)
+
 
 def calculate(requests: list[dict], responses: list[dict], balances, params):
+    logging.info('Calculating metrics')
+
     workload: str = params['workload']
     num_rows: int = params['num_rows']
     num_operations: int = params['num_operations']
@@ -150,34 +156,30 @@ def calculate(requests: list[dict], responses: list[dict], balances, params):
 
     raw_results = pd.merge(requests_df, responses_df, on='request_id', how='outer')
     raw_results.to_csv(os.path.join(results_dir, 'raw_results.csv'), index=False)
+
     raw_results['latency'] = raw_results['timestamp_y'] - raw_results['timestamp_x']
-
-    check_for_missed_messages(raw_results)
-
     params['operation_counts'] = (raw_results['function'].value_counts() / num_runs).astype(int).to_dict()
 
-    consistency_metrics = calculate_consistency_metrics(raw_results, balances, 10 * 10)
-    abort_rate_metrics = calculate_abort_rate_metrics(num_operations * num_runs)
-    latency_metrics = calculate_latency_metrics(raw_results)
-    throughput_metrics = calculate_throughput_metrics(raw_results)
+    num_missed_messages = check_for_missed_messages(raw_results)
+    verification_results = raw_results[raw_results['stage'] == 'validation'].to_dict('index')
 
-    pd.DataFrame([params]).to_csv(
-        os.path.join(results_dir, f'benchmark_parameters.csv'),
-        index=False
+    consistency_metrics = calculate_consistency_metrics(
+        verification_results,
+        balances,
+        num_operations,
+        num_missed_messages
     )
-    pd.DataFrame(consistency_metrics).to_csv(
-        os.path.join(results_dir, f'consistency_metrics.csv'),
-        index=False
-    )
-    pd.DataFrame(latency_metrics).to_csv(
-        os.path.join(results_dir, f'latency_metrics.csv'),
-        index=False
-    )
-    pd.DataFrame(throughput_metrics).to_csv(
-        os.path.join(results_dir, f'throughput_metrics.csv'),
-        index=False
-    )
-    pd.DataFrame([abort_rate_metrics]).to_csv(
-        os.path.join(results_dir, f'abort_rate_metrics.csv'),
-        index=False
-    )
+
+    abort_rate_metrics = calculate_abort_rate_metrics()
+    transaction_mix_results = raw_results[raw_results['stage'] == 'transaction_mix']
+    latency_metrics = calculate_latency_metrics(transaction_mix_results)
+    throughput_metrics = calculate_throughput_metrics(transaction_mix_results)
+
+    pd.DataFrame([params]).to_csv(os.path.join(results_dir, f'benchmark_parameters.csv'), index=False)
+    pd.DataFrame(consistency_metrics).to_csv(os.path.join(results_dir, f'consistency_metrics.csv'), index=False)
+    pd.DataFrame(latency_metrics).to_csv(os.path.join(results_dir, f'latency_metrics.csv'), index=False)
+    pd.DataFrame(throughput_metrics).to_csv(os.path.join(results_dir, f'throughput_metrics.csv'), index=False)
+    pd.DataFrame([abort_rate_metrics]).to_csv(os.path.join(results_dir, f'abort_rate_metrics.csv'), index=False)
+
+    logging.info('Finished calculating metrics')
+

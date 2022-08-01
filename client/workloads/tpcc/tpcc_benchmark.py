@@ -3,11 +3,11 @@ import os
 from abc import abstractmethod
 
 import pandas as pd
-from universalis.common.stateflow_ingress import IngressTypes
-from universalis.universalis import Universalis
 
 import workloads
 from common.logging import logging
+from universalis.common.stateflow_ingress import IngressTypes
+from universalis.universalis import Universalis
 from workloads.tpcc.functions.graph import g
 from workloads.tpcc.runtime.executor import Executor
 from workloads.tpcc.runtime.loader import Loader
@@ -71,18 +71,22 @@ class TpccBenchmark:
         await self.initialise()
         logging.info('Initialised')
         await asyncio.sleep(2)
+
         logging.info('Inserting records...')
         await self.insert_records()
         logging.info('Finished inserting')
         await asyncio.sleep(2)
+
         logging.info('Running transaction mix...')
         requests = await self.run_transaction_mix()
         logging.info('Finished running transaction mix')
         await asyncio.sleep(2)
+
         logging.info('Cleaning up...')
         await self.cleanup()
         logging.info('Cleaned up')
         await asyncio.sleep(2)
+
         logging.info('Generating request data...')
         self.generate_request_data(requests)
         logging.info('Generated request data')

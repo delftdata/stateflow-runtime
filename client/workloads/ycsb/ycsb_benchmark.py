@@ -3,15 +3,15 @@ import configparser
 import json
 import random
 
+import workloads
 from common.logging import logging
 from consumer.consumer import BenchmarkConsumer
+from universalis.common.stateflow_ingress import IngressTypes
+from universalis.universalis import Universalis
 from workloads.ycsb.functions import ycsb
 from workloads.ycsb.functions.graph import ycsb_operator, g
 from workloads.ycsb.util import calculate_metrics
 from workloads.ycsb.util.zipfian_generator import ZipfGenerator
-
-from universalis.common.stateflow_ingress import IngressTypes
-from universalis.universalis import Universalis
 
 
 class YcsbBenchmark:
@@ -58,7 +58,6 @@ class YcsbBenchmark:
             self.balances[(self.run_number, str(key))] = {'expected': 100, 'received': 0}
 
     async def insert_records(self):
-        logging.info('Inserting')
         async_request_responses = []
 
         tasks = []
@@ -89,11 +88,7 @@ class YcsbBenchmark:
                 'timestamp': timestamp
             }]
 
-        logging.info(f'All {self.num_rows} Records Inserted')
-        await asyncio.sleep(2)
-
     async def run_transaction_mix(self):
-        logging.info('Running Transaction Mix')
         zipf_gen = ZipfGenerator(items=self.num_rows)
         tasks = []
         async_request_responses = []
@@ -136,12 +131,7 @@ class YcsbBenchmark:
                 'timestamp': timestamp
             }]
 
-        logging.info('Transaction Mix Complete')
-
-        await asyncio.sleep(1)
-
     async def run_validation(self):
-        logging.info('Validating')
         tasks = []
         async_request_responses = []
 
@@ -172,9 +162,8 @@ class YcsbBenchmark:
                 'timestamp': timestamp
             }]
 
-        await asyncio.sleep(1)
-
     async def cleanup_run(self):
+        # Not needed
         pass
 
     async def run(self):
@@ -189,17 +178,37 @@ class YcsbBenchmark:
             kafka_url=self.KAFKA_URL
         )
 
-        await self.universalis.submit(g)
+        await self.universalis.submit(g, (workloads,))
         await asyncio.sleep(2)
-        print('Graph submitted')
 
         for run_number in range(self.num_runs):
+            logging.info(f'Initialising run {run_number}...')
             await self.initialise_run(run_number)
+            logging.info('Initialised')
+            await asyncio.sleep(1)
+
+            logging.info('Inserting records...')
             await self.insert_records()
+            logging.info('Finished inserting')
+            await asyncio.sleep(2)
+
+            logging.info('Running transaction mix...')
             await self.run_transaction_mix()
+            logging.info('Finished running transaction mix')
+            await asyncio.sleep(2)
+
+            logging.info('Running validation...')
             await self.run_validation()
+            logging.info('Finished validation')
+            await asyncio.sleep(2)
+
+            logging.info('Cleaning up...')
             await self.cleanup_run()
+            logging.info('Cleaned up')
+            await asyncio.sleep(1)
             self.responses += await self.consumer.get_run_responses()
+
+            logging.info(f'Run {run_number} completed')
 
         await self.consumer.stop()
         await self.universalis.close()

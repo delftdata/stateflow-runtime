@@ -22,4 +22,4 @@ services:
       - DISCOVERY_HOST=coordinator
       - DISCOVERY_PORT=8888
     volumes:
-      - ./bench/results:/usr/local/universalis/results
+      - ./client/results:/usr/local/universalis/results

@@ -291,7 +291,10 @@ class Worker:
                     aborts_for_next_epoch: set[int] = aborted.union(remote_aborted)
                     await self.send_responses(aborts_for_next_epoch, logic_aborts_everywhere)
                     total_processed_functions: int = sum(self.processed_seq_size.values()) + len(sequence)
+
                     abort_rate: float = len(aborts_for_next_epoch) / total_processed_functions
+                    self.abort_rates.append(abort_rate)
+
                     if abort_rate > FALLBACK_STRATEGY_PERCENTAGE:
                         await self.wait_fallback_start_sync()
                         logging.warning(
@@ -324,8 +327,6 @@ class Worker:
                         f'initiated {len(chain_acks)} chains '
                         f'abort rate: {abort_rate}'
                     )
-
-                    self.abort_rates.append(len(aborts_for_next_epoch))
 
                 elif self.remote_wants_to_commit():
                     await self.handle_nothing_to_commit_case()

@@ -1,4 +1,6 @@
+from common.logging import logging
 from universalis.common.stateful_function import StatefulFunction
+from workloads.ycsb.util import consts
 
 
 class NotEnoughCredit(Exception):
@@ -7,23 +9,24 @@ class NotEnoughCredit(Exception):
 
 class Insert(StatefulFunction):
     async def run(self, key: str):
-        await self.put(key, 1)
+        value: int = consts.initial_account_balance
+        await self.put(key, value)
         # return key
         # logging.warning(f'Remote write within transaction: {key} within INSERT')
-        return key, 1
+        return key, value
 
 
 class Read(StatefulFunction):
     async def run(self, key: str):
-        data = await self.get(key)
+        value: int = await self.get(key)
         # logging.warning(f'Remote read within transaction: {data} within READ')
-        return key, data
+        return key, value
 
 
 class Update(StatefulFunction):
     async def run(self, key: str):
         new_value = await self.get(key)
-        new_value += 1
+        new_value += consts.transfer_amount
 
         await self.put(key, new_value)
         return key, new_value
@@ -40,7 +43,7 @@ class Transfer(StatefulFunction):
             params=(key_b,)
         )
 
-        value_a -= 1
+        value_a -= consts.transfer_amount
 
         if value_a < 0:
             raise NotEnoughCredit(f'Not enough credit for user: {key_a}')
