@@ -1,7 +1,3 @@
-from universalis.common.local_state_backends import LocalStateBackend
-from universalis.common.operator import Operator
-from universalis.common.stateflow_graph import StateflowGraph
-
 import workloads.tpcc.functions.customer as customer
 import workloads.tpcc.functions.district as district
 import workloads.tpcc.functions.history as history
@@ -11,6 +7,9 @@ import workloads.tpcc.functions.order as order
 import workloads.tpcc.functions.order_line as order_line
 import workloads.tpcc.functions.stock as stock
 import workloads.tpcc.functions.warehouse as warehouse
+from universalis.common.local_state_backends import LocalStateBackend
+from universalis.common.operator import Operator
+from universalis.common.stateflow_graph import StateflowGraph
 
 PARTITIONS_PER_OPERATOR: int = 2
 

@@ -10,6 +10,24 @@ from common.metrics import (
     calculate_latency_metrics,
     calculate_throughput_metrics,
 )
+from workloads.ycsb.util import consts
+
+
+def remove_application_aborted_values(responses: dict, balances: dict[(int, str), dict[str, int]]):
+    aborted_request_ids = []
+
+    for result in responses.values():
+        if isinstance(result['response'], str):
+            aborted_request_ids += [result['request_id']]
+            run_number = result['run_number']
+
+            if result['function'] == 'Transfer':
+                key_a, key_b = result['params']
+
+                balances[(run_number, str(key_a))]['expected'] += consts.transfer_amount
+                balances[(run_number, str(key_b))]['expected'] -= consts.transfer_amount
+
+    return aborted_request_ids
 
 
 def calculate_consistency_metrics(
@@ -72,11 +90,19 @@ def calculate(requests: list[dict], responses: list[dict], balances, params):
         raw_results.drop_duplicates(subset=['request_id'])
 
     raw_results.to_csv(os.path.join(results_dir, 'raw_results.csv'), index=False)
-    num_missed_messages = check_for_missed_messages(raw_results)
 
-    verification_results = raw_results[raw_results['stage'] == 'validation'].to_dict('index')
+    aborted_request_ids = remove_application_aborted_values(
+        raw_results[raw_results['stage'] == 'transaction_mix'].to_dict('index'),
+        balances
+    )
+    logging.info(f'{len(aborted_request_ids)} Requests Application Aborted')
+
+    results = raw_results[~raw_results['request_id'].isin(aborted_request_ids)]
+    num_missed_messages = check_for_missed_messages(results)
+
+    validation_results = results[results['stage'] == 'validation'].to_dict('index')
     consistency_metrics = calculate_consistency_metrics(
-        verification_results,
+        validation_results,
         balances,
         num_operations,
         num_missed_messages
@@ -84,7 +110,7 @@ def calculate(requests: list[dict], responses: list[dict], balances, params):
 
     abort_rate_metrics = calculate_abort_rate_metrics()
 
-    transaction_mix_results = raw_results[raw_results['stage'] == 'transaction_mix']
+    transaction_mix_results = results[results['stage'] == 'transaction_mix']
     params['operation_counts'] = (transaction_mix_results['function'].value_counts() / num_runs).astype(int).to_dict()
 
     latency_metrics = calculate_latency_metrics(transaction_mix_results)

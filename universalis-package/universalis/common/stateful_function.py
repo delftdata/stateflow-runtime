@@ -92,7 +92,7 @@ class StatefulFunction(Function):
     async def send_async_calls(self, ack_share=1):
         n_remote_calls: int = len(self.async_remote_calls)
         if n_remote_calls > 0 and not self.fallback_enabled:
-            # if fallback is enabled there is no need to call the functions because they are already cached
+            # if reordering is enabled there is no need to call the functions because they are already cached
             ack_payload = await self.networking.prepare_function_chain(
                 str(fractions.Fraction(f'1/{n_remote_calls}') * fractions.Fraction(ack_share)), self.t_id)
             remote_calls: list[Awaitable] = [self.call_remote_function_no_response(*entry, ack_payload=ack_payload)

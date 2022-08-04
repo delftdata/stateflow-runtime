@@ -16,10 +16,7 @@ services:
       context: .
       dockerfile: worker/worker.dockerfile
     image: dev/universalis:latest
-    environment:
-      - INGRESS_TYPE=KAFKA
-      - KAFKA_URL=kafka1:9092
-      - DISCOVERY_HOST=coordinator
-      - DISCOVERY_PORT=8888
+    env_file:
+      - worker/.env
     volumes:
       - ./client/results:/usr/local/universalis/results

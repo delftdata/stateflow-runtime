@@ -14,7 +14,7 @@ class TpccWorkload(Workload):
     def __init__(self):
         super().__init__()
         self.graph = g
-        self.scale_parameters = make_with_scale_factor(2, self.params['scale_factor'])
+        self.scale_parameters = make_with_scale_factor(self.params['num_warehouses'], self.params['scale_factor'])
         self.nu_rand = rand.set_nu_rand(nurand.make_for_load())
 
     async def init_run(self, run_number):
@@ -26,7 +26,7 @@ class TpccWorkload(Workload):
         config.read('workload.ini')
 
         return {
-            'workload': 'TPCC',
+            'workload': str(config['Benchmark']['workload']),
             'num_runs': int(config['Benchmark']['num_runs']),
             'num_concurrent_tasks': int(config['Benchmark']['num_concurrent_tasks']),
             'operation_mix': json.loads(config['Benchmark']['operation_mix']),
@@ -36,6 +36,7 @@ class TpccWorkload(Workload):
             'executor_batch_wait_time': float(config['Benchmark']['executor_batch_wait_time']),
             'benchmark_duration': int(config['Benchmark']['benchmark_duration']),
             'scale_factor': int(config['Benchmark']['scale_factor']),
+            'num_warehouses': int(config['Benchmark']['num_warehouses']),
         }
 
     async def insert_records(self):
@@ -52,7 +53,7 @@ class TpccWorkload(Workload):
         self.requests += await executor.execute_transactions(self.run_number)
 
     async def run_validation(self):
-        # No validation for TPCC yet
+        # No validation for TPCC_throughput yet
         pass
 
     def generate_metrics(self):

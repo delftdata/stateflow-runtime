@@ -26,15 +26,17 @@ from worker.run_func_payload import RunFuncPayload, SequencedItem
 from worker.sequencer.sequencer import Sequencer
 
 SERVER_PORT: int = 8888
-DISCOVERY_HOST: str = os.environ['DISCOVERY_HOST']
-DISCOVERY_PORT: int = int(os.environ['DISCOVERY_PORT'])
-KAFKA_URL: str = os.getenv('KAFKA_URL', None)
-INGRESS_TYPE = os.getenv('INGRESS_TYPE', None)
+DISCOVERY_HOST: str = str(os.getenv('DISCOVERY_HOST'))
+DISCOVERY_PORT: int = int(os.getenv('DISCOVERY_PORT'))
+KAFKA_URL: str = str(os.getenv('KAFKA_URL', None))
+INGRESS_TYPE = str(os.getenv('INGRESS_TYPE', None))
 EGRESS_TOPIC_NAME: str = 'universalis-egress'
-EPOCH_INTERVAL: float = 0.01  # 10ms
-SEQUENCE_MAX_SIZE: int = 100
-DETERMINISTIC_REORDERING: bool = True
-FALLBACK_STRATEGY_PERCENTAGE: float = 0.1  # if more than 10% aborts use fallback strategy
+EPOCH_INTERVAL: float = float(os.getenv('EPOCH_INTERVAL', 0.01))  # 10ms
+SEQUENCE_MAX_SIZE: int = int(os.getenv('SEQUENCE_MAX_SIZE', 100))
+DETERMINISTIC_REORDERING: bool = bool(os.getenv('DETERMINISTIC_REORDERING', True))
+FALLBACK_STRATEGY_PERCENTAGE: float = float(
+    os.getenv('FALLBACK_STRATEGY_PERCENTAGE', 0.1)
+)  # if more than 10% aborts use fallback strategy
 ABORT_RATE_OUTPUT_INTERVAL = 5  # How long to wait after epoch end to output to file
 
 
@@ -72,7 +74,7 @@ class Worker:
         self.fallback_done: dict[int, asyncio.Event] = {}
         self.fallback_start: dict[int, asyncio.Event] = {}
         self.sequencer_lock = asyncio.Lock()
-        # the remote function calls with their params to be used in the fallback
+        # the remote function calls with their params to be used in the reordering
         self.remote_function_calls: dict[int, list[RunFuncPayload]] = {}  # t_id: functions that it runs
         # Abort rate logging
         self.abort_rates: list[float] = []  # epoch_number: abort rate
@@ -172,7 +174,7 @@ class Worker:
             self.dibs[key_id] = {t_id}
 
     async def run_fallback_strategy(self, aborts_for_next_epoch: set[int], logic_aborts_everywhere: set[int]):
-        logging.warning('Starting fallback strategy...')
+        logging.warning('Starting reordering strategy...')
         aborted_sequence: list[SequencedItem] = await self.sequencer.get_aborted_sequence(
             aborts_for_next_epoch,
             logic_aborts_everywhere
@@ -300,7 +302,7 @@ class Worker:
                         await self.wait_fallback_start_sync()
                         logging.warning(
                             f'Epoch: {self.sequencer.epoch_counter} '
-                            f'Abort percentage: {int(abort_rate * 100)}% initiating fallback strategy...'
+                            f'Abort percentage: {int(abort_rate * 100)}% initiating reordering strategy...'
                         )
                         # logging.warning(f'Logic abort ti_ds: {logic_aborts_everywhere}')
                         await self.run_fallback_strategy(aborts_for_next_epoch, logic_aborts_everywhere)
@@ -372,7 +374,7 @@ class Worker:
                 await self.run_fallback_strategy(set(), logic_aborts_everywhere)
             logging.warning(
                 f'Epoch: {self.sequencer.epoch_counter} '
-                f'Abort percentage: {int(abort_rate * 100)}% initiating fallback strategy...'
+                f'Abort percentage: {int(abort_rate * 100)}% initiating reordering strategy...'
             )
             logging.warning(
                 f'Epoch: {self.sequencer.epoch_counter} '
@@ -542,7 +544,7 @@ class Worker:
                     logging.info(f'ABORT ACK received for {ack_id}')
                     await self.networking.abort_chain(ack_id)
             case 'UNLOCK':
-                # fallback phase
+                # reordering phase
                 # here we handle the logic to unlock locks held by the provided distributed transaction
                 t_id, success = message
                 if success:

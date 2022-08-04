@@ -19,6 +19,7 @@ class YcsbWorkload(Workload):
         self.graph = g
         self.num_rows: int = self.params['num_rows']
         self.batch_size: int = self.params['batch_size']
+        self.batch_wait_time: float = self.params['batch_wait_time']
         self.num_operations: int = self.params['num_operations']
         self.keys: list[int] = list(range(self.num_rows))
         self.balances: dict[(int, str), dict[str, int]] = {}
@@ -29,12 +30,13 @@ class YcsbWorkload(Workload):
         config.read('workload.ini')
 
         return {
-            'workload': 'YCSB+T',
+            'workload': str(config['Benchmark']['workload']),
             'num_runs': int(config['Benchmark']['num_runs']),
             'num_rows': int(config['Benchmark']['num_rows']),
             'num_operations': int(config['Benchmark']['num_operations']),
             'num_concurrent_tasks': int(config['Benchmark']['num_concurrent_tasks']),
             'batch_size': int(config['Benchmark']['batch_size']),
+            'batch_wait_time': float(config['Benchmark']['batch_wait_time']),
             'operation_mix': json.loads(config['Benchmark']['operation_mix'])
         }
 
@@ -114,6 +116,7 @@ class YcsbWorkload(Workload):
 
             if len(tasks) == self.batch_size:
                 async_request_responses += await gather_with_concurrency_limit(self.num_concurrent_tasks, *tasks)
+                await asyncio.sleep(self.batch_wait_time)
                 tasks = []
 
         if len(tasks) > 0:
