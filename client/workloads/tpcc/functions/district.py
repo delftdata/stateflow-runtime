@@ -2,7 +2,6 @@ import asyncio
 
 from universalis.common.logging import logging
 from universalis.common.stateful_function import StatefulFunction
-
 from workloads.tpcc.util import constants
 from workloads.tpcc.util.key import tuple_to_composite
 
@@ -52,8 +51,6 @@ class NewOrder(StatefulFunction):
         # Get Customer, Warehouse and District information
         # --------------------
         warehouse_key = str(w_id)
-        customer_key = tuple_to_composite((w_id, d_id, c_id))
-
         warehouse_data = await self.call_remote_function_request_response(
             'warehouse',
             'GetWarehouse',
@@ -61,8 +58,19 @@ class NewOrder(StatefulFunction):
             (warehouse_key,)
         )
 
-        district = await self.get(key)
+        logging.warning('Got Warehouse')
 
+        district_key = tuple_to_composite((w_id, d_id))
+        district_data = await self.call_remote_function_request_response(
+            'district',
+            'GetDistrict',
+            district_key,
+            (district_key,)
+        )
+
+        logging.warning('Got District')
+
+        customer_key = tuple_to_composite((w_id, d_id, c_id))
         customer_data = await self.call_remote_function_request_response(
             'customer',
             'GetCustomer',
@@ -70,9 +78,11 @@ class NewOrder(StatefulFunction):
             (customer_key,)
         )
 
+        logging.warning('Got Customer')
+
         w_tax = float(warehouse_data['w_tax'])
-        d_tax = float(district['d_tax'])
-        d_next_o_id = district['d_next_o_id']
+        d_tax = float(district_data['d_tax'])
+        d_next_o_id = district_data['d_next_o_id']
         c_discount = float(customer_data['c_discount'])
 
         # --------------------------
@@ -87,7 +97,7 @@ class NewOrder(StatefulFunction):
         # Increment next order id
         # --------------------------
         d_next_o_id += 1
-        district['d_next_o_id'] = d_next_o_id
+        district_data['d_next_o_id'] = d_next_o_id
 
         # --------------------
         # Create Order query
@@ -100,6 +110,8 @@ class NewOrder(StatefulFunction):
             'o_all_local': all_local
         }
         await self.call_remote_function_no_response('order', 'InsertOrder', order_key, (order_key, order_params,))
+
+        logging.warning('Inserted Order')
 
         # ------------------------
         # Create New Order Query
@@ -116,6 +128,8 @@ class NewOrder(StatefulFunction):
             new_order_key,
             (new_order_key, new_order_params,)
         )
+
+        logging.warning('Inserted New Order')
 
         # -------------------------------
         # Insert Order Item Information
@@ -194,6 +208,8 @@ class NewOrder(StatefulFunction):
                 (stock_keys[k], v)
             )
 
+            logging.warning('Inserted Stock')
+
             if i_data[k].find(constants.ORIGINAL_STRING) != -1 and s_data.find(constants.ORIGINAL_STRING) != -1:
                 brand_generic = 'B'
             else:
@@ -222,6 +238,8 @@ class NewOrder(StatefulFunction):
                 order_line_key,
                 (order_line_key, order_line_params)
             )
+
+            logging.warning('Inserted OrderLine')
 
             item_data.append((i_name, s_quantity, brand_generic, i_price, ol_amount))
 

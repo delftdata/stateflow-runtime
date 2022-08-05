@@ -31,13 +31,20 @@ class Payment(StatefulFunction):
         h_amount: float = params['h_amount']
         c_w_id: str = params['c_w_id']
         c_d_id: str = params['c_d_id']
+        c_id: str = params['c_id']
         c_last: str = params['c_last']
         h_date: str = params['h_date']
 
         # --------------------------
         # Get Customer By ID Query
         # --------------------------
-        customer_data = await self.get(key)
+        customer_key = tuple_to_composite((c_w_id, c_d_id, c_id))
+        customer_data: dict = await self.call_remote_function_request_response(
+            'customer',
+            'GetCustomer',
+            customer_key,
+            (customer_key,)
+        )
 
         c_balance: float = float(customer_data['c_balance']) - h_amount
         c_ytd_payment: float = float(customer_data['c_ytd_payment']) + h_amount

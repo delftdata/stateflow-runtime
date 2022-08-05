@@ -479,12 +479,9 @@ class Loader:
 
     @staticmethod
     def generate_history(h_c_w_id: int, h_c_d_id: int, h_c_id: int) -> tuple[str, dict[str, int | str | float]]:
-        key: str = tuple_to_composite((h_c_id, h_c_d_id, h_c_w_id))
+        key: str = tuple_to_composite((h_c_w_id, h_c_d_id, h_c_id))
 
         return key, {
-            'h_c_id': h_c_id,
-            'h_c_d_id': h_c_d_id,
-            'h_c_w_id': h_c_w_id,
             'h_d_id': h_c_d_id,
             'h_w_id': h_c_w_id,
             'h_date': datetime.now().strftime("%m/%d/%Y, %H:%M:%S"),

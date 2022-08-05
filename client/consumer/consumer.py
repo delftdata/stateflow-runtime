@@ -4,7 +4,7 @@ from asyncio import Event, Lock
 
 import uvloop
 from aiokafka import AIOKafkaConsumer
-from kafka.errors import UnknownTopicOrPartitionError, KafkaConnectionError
+from aiokafka.errors import UnknownTopicOrPartitionError, KafkaConnectionError
 
 from common.logging import logging
 from universalis.common.serialization import msgpack_deserialization
