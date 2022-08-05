@@ -4,6 +4,7 @@ from asyncio import Event, Lock
 
 import uvloop
 from aiokafka import AIOKafkaConsumer
+from kafka.errors import UnknownTopicOrPartitionError, KafkaConnectionError
 
 from common.logging import logging
 from universalis.common.serialization import msgpack_deserialization
@@ -75,7 +76,15 @@ class BenchmarkConsumer:
             bootstrap_servers='localhost:9093'
         )
 
-        await self.consumer.start()
+        while True:
+            # start the kafka consumer
+            try:
+                await self.consumer.start()
+            except (UnknownTopicOrPartitionError, KafkaConnectionError):
+                time.sleep(1)
+                continue
+            break
+
         asyncio.create_task(self.consume_messages())
         asyncio.create_task(self.check_for_timeout())
 
