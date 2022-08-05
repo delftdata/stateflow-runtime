@@ -1,13 +1,15 @@
 import asyncio
+import os
 import time
 from asyncio import Event, Lock
 
 import uvloop
 from aiokafka import AIOKafkaConsumer
-from aiokafka.errors import UnknownTopicOrPartitionError, KafkaConnectionError
 
 from common.logging import logging
 from universalis.common.serialization import msgpack_deserialization
+
+NUM_CONSUMERS: int = int(os.environ['NUM_CONSUMERS'])
 
 
 class BenchmarkConsumer:
@@ -16,23 +18,28 @@ class BenchmarkConsumer:
     consumer: AIOKafkaConsumer
 
     def __init__(self):
-        self.consumer_ready_event: asyncio.Event() = Event()
         self.timeout_event: asyncio.Event = Event()
         self.last_message_time_lock: asyncio.Lock = Lock()
         self.last_message_time: float = float('inf')
-        self.responses_lock: asyncio.Lock = Lock()
-        self.responses: list[dict] = []
+        self.consumer_ready_events: dict[int, asyncio.Event()] = {}
+        self.responses: dict[int, list[dict]] = {}
+        self.response_locks: dict[int, asyncio.Lock] = {}
+        self.consumers: dict[int, AIOKafkaConsumer] = {}
 
     async def get_run_responses(self):
         await self.timeout_event.wait()
+        results = []
 
-        async with self.responses_lock:
-            responses = self.responses
-            self.responses = []
-            return responses
+        for key, response in self.responses.items():
+            async with self.response_locks[key]:
+                results += response
+                self.responses[key] = []
+
+        return results
 
     async def stop(self):
-        await self.consumer.stop()
+        for key, consumer in self.consumers.items():
+            await consumer.stop()
 
     async def check_for_timeout(self):
         while True:
@@ -47,14 +54,16 @@ class BenchmarkConsumer:
 
             await asyncio.sleep(1)
 
-    async def consume_messages(self):
+    async def consume_messages(self, number: int, consumer: AIOKafkaConsumer):
         logging.warning("Consuming...")
-        try:
-            self.consumer_ready_event.set()
 
-            async for msg in self.consumer:
-                async with self.responses_lock:
-                    self.responses += [{
+        try:
+            self.consumer_ready_events[number].set()
+
+            async for msg in consumer:
+                logging.info(f'consumer {number} consumed')
+                async with self.response_locks[number]:
+                    self.responses[number] += [{
                         'request_id': msg.key,
                         'response': msg.value,
                         'timestamp': msg.timestamp,
@@ -65,27 +74,29 @@ class BenchmarkConsumer:
 
                 await asyncio.sleep(0.001)
         except:
-            self.consumer_ready_event.clear()
-            await self.consumer.stop()
+            self.consumer_ready_events[number].clear()
+            await consumer.stop()
 
     async def run(self):
-        self.consumer: AIOKafkaConsumer = AIOKafkaConsumer(
-            'universalis-egress',
-            key_deserializer=msgpack_deserialization,
-            value_deserializer=msgpack_deserialization,
-            bootstrap_servers='localhost:9093'
-        )
+        for i in range(1, NUM_CONSUMERS + 1):
+            consumer: AIOKafkaConsumer = AIOKafkaConsumer(
+                'universalis-egress',
+                key_deserializer=msgpack_deserialization,
+                value_deserializer=msgpack_deserialization,
+                bootstrap_servers='localhost:9093',
+                group_id=f"client-consumer-group"
+            )
 
-        while True:
-            # start the kafka consumer
-            try:
-                await self.consumer.start()
-            except (UnknownTopicOrPartitionError, KafkaConnectionError):
-                time.sleep(1)
-                continue
-            break
+            self.responses[i] = []
+            self.response_locks[i] = asyncio.Lock()
 
-        asyncio.create_task(self.consume_messages())
+            self.consumers[i] = consumer
+            self.consumer_ready_events[i] = asyncio.Event()
+            await consumer.start()
+
+        for i in range(1, NUM_CONSUMERS + 1):
+            asyncio.create_task(self.consume_messages(i, self.consumers[i]))
+
         asyncio.create_task(self.check_for_timeout())
 
 

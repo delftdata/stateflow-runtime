@@ -86,8 +86,9 @@ def calculate(requests: list[dict], responses: list[dict], balances, params):
 
     # TODO: Fix this issue with Kafka sending duplicate requests
     if any(raw_results['request_id'].duplicated()):
-        logging.warning('Requests have been duplicated, removing duplicates')
-        raw_results.drop_duplicates(subset=['request_id'])
+        duplicated = raw_results['request_id'].shape[0]
+        logging.warning(f'{duplicated} Requests have been duplicated, removing duplicates')
+        raw_results = raw_results.drop_duplicates(subset=['request_id'])
 
     raw_results.to_csv(os.path.join(results_dir, 'raw_results.csv'), index=False)
 

@@ -32,7 +32,8 @@ class Workload(ABC):
     async def init_consumer(self):
         self.consumer: BenchmarkConsumer = BenchmarkConsumer()
         asyncio.create_task(self.consumer.run())
-        await self.consumer.consumer_ready_event.wait()
+        await asyncio.sleep(1)
+        await asyncio.gather(*[event.wait() for event in self.consumer.consumer_ready_events.values()])
 
     async def init_universalis(self):
         await self.universalis.submit(self.graph, (workloads,))
