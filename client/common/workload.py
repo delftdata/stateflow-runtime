@@ -97,6 +97,7 @@ class Workload(ABC):
 
             self.responses += await self.consumer.get_run_responses()
             logging.info(f'Run {run_number} - Complete')
+            await asyncio.sleep(5)
 
         await self.consumer.stop()
         await self.universalis.close()
