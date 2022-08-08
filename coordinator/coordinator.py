@@ -5,11 +5,10 @@ from kafka import KafkaAdminClient
 from kafka.admin import NewTopic
 from kafka.errors import NoBrokersAvailable, NodeNotReadyError, TopicAlreadyExistsError
 
+from scheduler.round_robin import RoundRobin
+from universalis.common.logging import logging
 from universalis.common.stateflow_graph import StateflowGraph
 from universalis.common.stateflow_ingress import IngressTypes
-from universalis.common.logging import logging
-
-from scheduler.round_robin import RoundRobin
 
 
 class NotAStateflowGraph(Exception):
@@ -28,11 +27,13 @@ class Coordinator:
         self.workers[self.worker_counter] = (worker_ip, self.server_port)
         return self.worker_counter
 
-    async def submit_stateflow_graph(self,
-                                     network_manager,
-                                     stateflow_graph: StateflowGraph,
-                                     ingress_type: IngressTypes = IngressTypes.KAFKA,
-                                     scheduler_type=None):
+    async def submit_stateflow_graph(
+            self,
+            network_manager,
+            stateflow_graph: StateflowGraph,
+            ingress_type: IngressTypes = IngressTypes.KAFKA,
+            scheduler_type=None
+            ):
         if not isinstance(stateflow_graph, StateflowGraph):
             raise NotAStateflowGraph
         scheduler = RoundRobin()
@@ -53,9 +54,11 @@ class Coordinator:
                 logging.warning(f'Kafka at {kafka_url} not ready yet, sleeping for 1 second')
                 time.sleep(1)
         topics = [NewTopic(name=operator.name, num_partitions=operator.n_partitions, replication_factor=1)
-                  for operator in stateflow_graph.nodes.values()] + [NewTopic(name='universalis-egress',
-                                                                              num_partitions=1,
-                                                                              replication_factor=1)]
+                  for operator in stateflow_graph.nodes.values()] + [NewTopic(
+            name='universalis-egress',
+            num_partitions=3,
+            replication_factor=1
+            )]
         try:
             client.create_topics(topics)
         except TopicAlreadyExistsError:
