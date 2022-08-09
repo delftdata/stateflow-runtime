@@ -130,4 +130,5 @@ dmypy.json
 
 .idea
 
-*.csv!/client/workload.ini
+/client/workload.ini
+/client/results/*
