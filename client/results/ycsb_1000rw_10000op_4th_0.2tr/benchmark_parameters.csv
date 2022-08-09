@@ -1,0 +1,2 @@
+workload,num_runs,num_rows,num_operations,num_concurrent_tasks,batch_size,batch_wait_time,operation_mix,operation_counts
+ycsb,1,1000,10000,4,300,0.1,"[0.8, 0, 0.2]","{'Read': 7973, 'Transfer': 2027}"
