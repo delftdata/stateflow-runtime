@@ -37,7 +37,7 @@ DETERMINISTIC_REORDERING: bool = bool(os.getenv('DETERMINISTIC_REORDERING', True
 FALLBACK_STRATEGY_PERCENTAGE: float = float(
     os.getenv('FALLBACK_STRATEGY_PERCENTAGE', 0.1)
 )  # if more than 10% aborts use fallback strategy
-ABORT_RATE_OUTPUT_INTERVAL = 10  # How long to wait after epoch end to output to file
+ABORT_RATE_OUTPUT_INTERVAL = 5  # How long to wait after epoch end to output to file
 
 
 class Worker:

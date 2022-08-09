@@ -54,6 +54,17 @@ class BenchmarkConsumer:
 
             await asyncio.sleep(1)
 
+    async def add_response_to_records(self, number: int, msg):
+        logging.info(f'consumer {number} consumed')
+        self.responses[number] += [{
+            'request_id': msg.key,
+            'response': msg.value,
+            'timestamp': msg.timestamp,
+        }]
+
+        async with self.last_message_time_lock:
+            self.last_message_time = time.time()
+
     async def consume_messages(self, number: int, consumer: AIOKafkaConsumer):
         logging.warning("Consuming...")
 
@@ -61,18 +72,7 @@ class BenchmarkConsumer:
             self.consumer_ready_events[number].set()
 
             async for msg in consumer:
-                logging.info(f'consumer {number} consumed')
-                async with self.response_locks[number]:
-                    self.responses[number] += [{
-                        'request_id': msg.key,
-                        'response': msg.value,
-                        'timestamp': msg.timestamp,
-                    }]
-
-                async with self.last_message_time_lock:
-                    self.last_message_time = time.time()
-
-                await asyncio.sleep(0.001)
+                asyncio.create_task(self.add_response_to_records(number, msg))
         except:
             self.consumer_ready_events[number].clear()
             await consumer.stop()
@@ -84,7 +84,7 @@ class BenchmarkConsumer:
                 key_deserializer=msgpack_deserialization,
                 value_deserializer=msgpack_deserialization,
                 bootstrap_servers='localhost:9093',
-                group_id=f"client-consumer-group"
+                group_id=f"universalis-egress-consumer-group"
             )
 
             self.responses[i] = []

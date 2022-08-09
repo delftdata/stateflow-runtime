@@ -33,7 +33,7 @@ class Coordinator:
             stateflow_graph: StateflowGraph,
             ingress_type: IngressTypes = IngressTypes.KAFKA,
             scheduler_type=None
-            ):
+    ):
         if not isinstance(stateflow_graph, StateflowGraph):
             raise NotAStateflowGraph
         scheduler = RoundRobin()
@@ -56,9 +56,10 @@ class Coordinator:
         topics = [NewTopic(name=operator.name, num_partitions=operator.n_partitions, replication_factor=1)
                   for operator in stateflow_graph.nodes.values()] + [NewTopic(
             name='universalis-egress',
-            num_partitions=3,
+            num_partitions=2,
             replication_factor=1
-            )]
+        )]
+        
         try:
             client.create_topics(topics)
         except TopicAlreadyExistsError:
