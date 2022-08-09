@@ -81,7 +81,6 @@ class BenchmarkConsumer:
 
                 async with self.last_message_time_lock:
                     self.last_message_time = time.time()
-                asyncio.create_task(self.add_response_to_records(number, msg))
         except:
             self.consumer_ready_events[number].clear()
             await consumer.stop()
