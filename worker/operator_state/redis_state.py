@@ -4,7 +4,7 @@ import redis.asyncio as redis
 
 from universalis.common.logging import logging
 from universalis.common.base_state import BaseOperatorState, ReadUncommitedException
-from universalis.common.serialization import msgpack_serialization, msgpack_deserialization
+from universalis.common.serialization import msgpack_serialization, msgpack_deserialization, pickle_deserialization
 
 
 class RedisOperatorState(BaseOperatorState):
@@ -25,12 +25,17 @@ class RedisOperatorState(BaseOperatorState):
                     await self.redis_connections[operator_name].mset(serialized_kv_pairs)
 
     async def get(self, key, t_id: int, operator_name: str):
-        logging.info(f'GET: {key} with t_id: {t_id} operator: {operator_name}')
+        # logging.warning(f'GET: {key} with t_id: {t_id} operator: {operator_name}')
         async with self.read_set_locks[operator_name]:
             if t_id in self.read_sets[operator_name]:
                 self.read_sets[operator_name][t_id].add(key)
             else:
                 self.read_sets[operator_name][t_id] = {key}
+        # if transaction wrote read from the write set
+        if t_id in self.write_sets[operator_name] and key in self.write_sets[operator_name][t_id]:
+            self.reads[operator_name][key] = min(self.reads[operator_name].get(key, t_id), t_id)
+            return self.write_sets[operator_name][t_id][key]
+
         async with self.writing_to_db_locks[operator_name]:
             db_value = await self.redis_connections[operator_name].get(key)
         if db_value is None:
@@ -69,7 +74,8 @@ class RedisOperatorState(BaseOperatorState):
                 updates_to_commit.update(ws)
                 committed_t_ids.add(t_id)
         if updates_to_commit:
-            logging.info(f'Committing: {updates_to_commit}')
+            # deser = {key: pickle_deserialization(value) for key, value in updates_to_commit.items()}
+            # logging.warning(f'Committing: {deser}')
             serialized_kv_pairs = {key: msgpack_serialization(value) for key, value in updates_to_commit.items()}
             async with self.writing_to_db_locks[operator_name]:
                 await self.redis_connections[operator_name].mset(serialized_kv_pairs)

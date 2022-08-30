@@ -3,7 +3,7 @@ import pandas as pd
 
 import asyncio
 import uvloop
-from universalis.common.serialization import msgpack_deserialization
+from universalis.common.serialization import msgpack_deserialization, pickle_deserialization
 
 
 async def consume():
@@ -11,14 +11,13 @@ async def consume():
     consumer = AIOKafkaConsumer(
         'universalis-egress',
         key_deserializer=msgpack_deserialization,
-        value_deserializer=msgpack_deserialization,
+        value_deserializer=pickle_deserialization,
         bootstrap_servers='localhost:9093')
     await consumer.start()
     try:
         # Consume messages
         async for msg in consumer:
-            print("consumed: ", msg.key, msg.value, msg.timestamp)
-            records.append((msg.key, msg.value, msg.timestamp))
+            records.append((msg.key, msg.value.payload, msg.timestamp))
     finally:
         # Will leave consumer group; perform autocommit if enabled.
         await consumer.stop()

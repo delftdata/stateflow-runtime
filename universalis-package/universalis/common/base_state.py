@@ -2,7 +2,8 @@ import asyncio
 from abc import abstractmethod, ABC
 from typing import Any
 
-from universalis.common.logging import logging
+# from universalis.common.serialization import pickle_deserialization
+# from universalis.common.logging import logging
 
 
 class ReadUncommitedException(Exception):
@@ -33,7 +34,7 @@ class BaseOperatorState(ABC):
         self.cleanup()
 
     async def put(self, key, value, t_id: int, operator_name: str):
-        logging.info(f'PUT: {key}:{value} with t_id: {t_id} operator: {operator_name}')
+        # logging.warning(f'PUT: {key}:{pickle_deserialization(value)} with t_id: {t_id} operator: {operator_name}')
         async with self.write_set_locks[operator_name]:
             if t_id in self.write_sets[operator_name]:
                 self.write_sets[operator_name][t_id][key] = value

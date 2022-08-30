@@ -14,6 +14,10 @@ RUN pip install --upgrade pip \
     && pip install --user -r /var/local/universalis/requirements.txt \
     && pip install --user ./var/local/universalis-package/
 
+COPY --chown=universalis:universalis stateful_dataflows.tgz /var/local/universalis/
+RUN pip install --user /var/local/universalis/stateful_dataflows.tgz
+RUN pip install --user pytest
+
 WORKDIR /usr/local/universalis
 
 COPY --chown=universalis:universalis coordinator coordinator

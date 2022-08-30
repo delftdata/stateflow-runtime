@@ -73,7 +73,7 @@ class StatefulFunction(Function):
                 # No chain or end
                 return res, 0
         except Exception as e:
-            logging.debug(traceback.format_exc())
+            logging.warning(traceback.format_exc())
             return e, -1
 
     @abstractmethod
@@ -128,7 +128,7 @@ class StatefulFunction(Function):
                                                ack_payload,
                                                {"__COM_TYPE__": 'RUN_FUN_REMOTE',
                                                 "__MSG__": payload},
-                                               Serializer.MSGPACK)
+                                               Serializer.PICKLE)
 
     async def call_remote_function_request_response(self,
                                                     operator_name: str,
@@ -146,7 +146,7 @@ class StatefulFunction(Function):
                                                                    operator_port,
                                                                    {"__COM_TYPE__": 'RUN_FUN_RQ_RS_REMOTE',
                                                                     "__MSG__": payload},
-                                                                   Serializer.MSGPACK)
+                                                                   Serializer.PICKLE)
         return resp
 
     async def prepare_message_transmission(self, operator_name: str, key, function_name: str, params):

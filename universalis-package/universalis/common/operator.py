@@ -32,8 +32,8 @@ class Operator(BaseOperator):
                            ack_payload: tuple[str, int, str],
                            fallback_mode: bool,
                            *params) -> tuple[Any, bool]:
-        logging.info(f'RQ_ID: {msgpack_deserialization(request_id)} TID: {t_id} '
-                     f'function: {function_name} fallback mode: {fallback_mode}')
+        # logging.warning(f'RQ_ID: {msgpack_deserialization(request_id)} TID: {t_id} '
+        #              f'function: {function_name} fallback mode: {fallback_mode}')
         function = self.functions[function_name].materialize_function(self.state,
                                                                       self.networking,
                                                                       timestamp,

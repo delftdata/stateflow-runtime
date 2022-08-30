@@ -1,11 +1,10 @@
 import math
 
-import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 
-input_msgs = pd.read_csv('client_requests.csv')
-output_msgs = pd.read_csv('output.csv')
+input_msgs = pd.read_csv('universalis_client_requests.csv')
+output_msgs = pd.read_csv('output.csv').drop_duplicates(subset=['request_id'])
 
 joined = pd.merge(input_msgs, output_msgs, on='request_id', how='outer')
 runtime = joined['timestamp_y'] - joined['timestamp_x']
@@ -25,7 +24,7 @@ print(f'10%: {np.percentile(runtime_no_nan, 10)}ms')
 print(np.argmax(runtime_no_nan))
 print(np.argmin(runtime_no_nan))
 
-missed = joined[joined['response'].isna()]
+missed = joined[joined['timestamp_y'].isna()]
 
 if len(missed) > 0:
     print('--------------------')

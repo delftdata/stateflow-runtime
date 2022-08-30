@@ -16,13 +16,17 @@ from universalis.common.local_state_backends import LocalStateBackend
 from universalis.common.networking import NetworkingManager
 from universalis.common.logging import logging
 from universalis.common.operator import Operator
-from universalis.common.serialization import Serializer, msgpack_serialization
+from universalis.common.serialization import Serializer, msgpack_serialization, pickle_serialization, \
+    cloudpickle_serialization
 
 from worker.operator_state.in_memory_state import InMemoryOperatorState
 from worker.operator_state.redis_state import RedisOperatorState
 from worker.operator_state.stateless import Stateless
 from worker.run_func_payload import RunFuncPayload, SequencedItem
 from worker.sequencer.sequencer import Sequencer
+
+
+# TODO check if the second commit is needed and how to do it
 
 
 SERVER_PORT: int = 8888
@@ -35,6 +39,9 @@ EPOCH_INTERVAL: float = 0.01  # 10ms
 SEQUENCE_MAX_SIZE: int = 100
 DETERMINISTIC_REORDERING: bool = True
 FALLBACK_STRATEGY_PERCENTAGE: float = 0.1  # if more than 10% aborts use fallback strategy
+OUTPUT_SERIALIZER = Serializer.PICKLE  # how to serialize the output
+
+STATEFLOW_MODE = True
 
 
 class Worker:
@@ -86,11 +93,15 @@ class Worker:
                                                                                payload.ack_payload,
                                                                                self.fallback_mode,
                                                                                *payload.params))
-
+        # logging.warning(f'UNIV RSP: {response}')
+        # logging.warning(f'RSP sock: {payload.response_socket}')
+        # logging.warning(f'internal_msg: {internal_msg}')
+        # logging.warning(f'payload.function_name: {payload.function_name}')
+        # logging.warning(f'response: {response}')
         if payload.response_socket is not None:
             self.router.write((payload.response_socket, self.networking.encode_message(response,
                                                                                        Serializer.MSGPACK)))
-        elif response is not None and not internal_msg:
+        elif response is not None and (not internal_msg or payload.function_name != 'UniversalisCreateOperator'):
             if isinstance(response, Exception):
                 self.logic_aborts.add(t_id)
                 response = str(response)
@@ -98,7 +109,7 @@ class Worker:
                 await self.scheduler.spawn(
                     self.kafka_egress_producer.send_and_wait(EGRESS_TOPIC_NAME,
                                                              key=payload.request_id,
-                                                             value=msgpack_serialization(response)))
+                                                             value=response))
             else:
                 self.response_buffer[t_id] = (payload.request_id, response)
         if isinstance(response, Exception):
@@ -206,7 +217,7 @@ class Worker:
             async with self.sequencer_lock:
                 sequence: list[SequencedItem] = await self.sequencer.get_epoch()  # GET SEQUENCE
                 if sequence is not None:
-                    logging.warning(f'Epoch: {self.sequencer.epoch_counter} starts')
+                    logging.warning(f'Epoch: {self.sequencer.epoch_counter} starts with SQ size: {len(sequence)}')
                     # Run all the epochs functions concurrently
                     epoch_start = timer()
                     logging.info(f'Running functions... with sequence: {sequence}')
@@ -287,30 +298,36 @@ class Worker:
     async def handle_nothing_to_commit_case(self):
         logging.warning(f'Epoch: {self.sequencer.epoch_counter} starts')
         epoch_start = timer()
-        await self.send_commit_to_peers(set(), 0)
+        if DETERMINISTIC_REORDERING:
+            aborted: set[int] = self.local_state.check_conflicts_deterministic_reordering()
+        else:
+            aborted: set[int] = self.local_state.check_conflicts()
+        await self.send_commit_to_peers(aborted, 0)
         # Wait for remote to be ready to commit
         wait_remote_commits_task = [event.wait()
                                     for event in self.ready_to_commit_events.values()]
         logging.info(f'Waiting on remote commits...')
         await asyncio.gather(*wait_remote_commits_task)
+        logic_aborts_everywhere: set[int] = set(
+            itertools.chain.from_iterable(self.logic_aborts_from_remote.values())
+        )
+        logic_aborts_everywhere = logic_aborts_everywhere.union(self.logic_aborts)
         remote_aborted: set[int] = set(
             itertools.chain.from_iterable(self.aborted_from_remote.values())
         )
         total_processed_functions: int = sum(self.processed_seq_size.values())
         abort_rate: float = len(remote_aborted) / total_processed_functions
+        await self.local_state.commit(remote_aborted.union(logic_aborts_everywhere))
+        await self.send_responses(remote_aborted, logic_aborts_everywhere)
         if abort_rate > FALLBACK_STRATEGY_PERCENTAGE:
             await self.wait_fallback_start_sync()
             if len(self.remote_function_calls) > 0:
-                logic_aborts_everywhere: set[int] = set(
-                    itertools.chain.from_iterable(self.logic_aborts_from_remote.values())
-                )
                 await self.run_fallback_strategy(set(), logic_aborts_everywhere)
             logging.warning(f'Epoch: {self.sequencer.epoch_counter} '
                             f'Abort percentage: {int(abort_rate * 100)}% initiating fallback strategy...')
             logging.warning(f'Epoch: {self.sequencer.epoch_counter} '
                             f'Fallback strategy done waiting for peers')
             await self.wait_fallback_done_sync()
-
         await self.sequencer.increment_epoch(self.t_counters.values())
         self.cleanup_after_epoch()
         epoch_end = timer()
@@ -359,7 +376,18 @@ class Worker:
         return False
 
     async def start_kafka_egress_producer(self):
+        match OUTPUT_SERIALIZER:
+            case Serializer.MSGPACK:
+                serializer = msgpack_serialization
+            case Serializer.PICKLE:
+                serializer = pickle_serialization
+            case Serializer.CLOUDPICKLE:
+                serializer = cloudpickle_serialization
+            case _:
+                logging.warning(f'Output serializer: {OUTPUT_SERIALIZER} is not supported falling back to MSGPACK')
+                serializer = msgpack_serialization
         self.kafka_egress_producer = AIOKafkaProducer(bootstrap_servers=[KAFKA_URL],
+                                                      value_serializer=lambda response: serializer(response),
                                                       enable_idempotence=True)
         while True:
             try:
@@ -480,6 +508,8 @@ class Worker:
             logging.error(f"Invalid operator state backend type: {self.operator_state_backend}")
             return
         for operator in self.registered_operators.values():
+            logging.warning(f'Attaching state to operator: {operator.name} '
+                            f'with f: {[f.function_definition.__name__ for f in operator.functions.values()]}')
             operator.attach_state_networking(self.local_state, self.networking, self.dns)
 
     async def handle_execution_plan(self, message):
@@ -564,7 +594,7 @@ class Worker:
                     asyncio.ensure_future(
                         self.kafka_egress_producer.send_and_wait(EGRESS_TOPIC_NAME,
                                                                  key=response[0],
-                                                                 value=msgpack_serialization(response[1]))))
+                                                                 value=response[1])))
         await asyncio.gather(*send_message_tasks)
 
     async def main(self):

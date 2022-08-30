@@ -9,7 +9,7 @@ from aiozmq import create_zmq_stream, ZmqStream
 
 from .logging import logging
 from .serialization import Serializer, msgpack_serialization, msgpack_deserialization, \
-    cloudpickle_serialization, cloudpickle_deserialization
+    cloudpickle_serialization, cloudpickle_deserialization, pickle_serialization, pickle_deserialization
 
 
 @dataclasses.dataclass
@@ -152,21 +152,25 @@ class NetworkingManager:
 
     @staticmethod
     def encode_message(msg: object, serializer: Serializer) -> bytes:
-        if serializer == Serializer.CLOUDPICKLE:
-            msg = struct.pack('>H', 0) + cloudpickle_serialization(msg)
-            return msg
-        elif serializer == Serializer.MSGPACK:
-            msg = struct.pack('>H', 1) + msgpack_serialization(msg)
-            return msg
-        else:
-            logging.info(f'Serializer: {serializer} is not supported')
+        match serializer:
+            case Serializer.CLOUDPICKLE:
+                return struct.pack('>H', 0) + cloudpickle_serialization(msg)
+            case Serializer.MSGPACK:
+                return struct.pack('>H', 1) + msgpack_serialization(msg)
+            case Serializer.PICKLE:
+                return struct.pack('>H', 2) + pickle_serialization(msg)
+            case _:
+                logging.error(f'Serializer: {serializer} is not supported')
 
     @staticmethod
     def decode_message(data):
         serializer = struct.unpack('>H', data[0:2])[0]
-        if serializer == 0:
-            return cloudpickle_deserialization(data[2:])
-        elif serializer == 1:
-            return msgpack_deserialization(data[2:])
-        else:
-            logging.info(f'Serializer: {serializer} is not supported')
+        match serializer:
+            case 0:
+                return cloudpickle_deserialization(data[2:])
+            case 1:
+                return msgpack_deserialization(data[2:])
+            case 2:
+                return pickle_deserialization(data[2:])
+            case _:
+                logging.error(f'Serializer: {serializer} is not supported')

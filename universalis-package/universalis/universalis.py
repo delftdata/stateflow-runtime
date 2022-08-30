@@ -1,4 +1,3 @@
-import asyncio
 import time
 import types
 import uuid
@@ -6,6 +5,7 @@ from typing import Type
 
 import cloudpickle
 from aiokafka import AIOKafkaProducer
+from confluent_kafka import Producer
 from kafka.errors import KafkaConnectionError
 
 from universalis.common.serialization import Serializer, msgpack_serialization
@@ -28,6 +28,8 @@ class GraphNotSerializable(Exception):
 
 class Universalis:
 
+    kafka_producer: AIOKafkaProducer
+
     def __init__(self,
                  coordinator_adr: str,
                  coordinator_port: int,
@@ -42,9 +44,7 @@ class Universalis:
             self.ingress_that_serves: StateflowWorker = StateflowWorker(tcp_ingress_host, tcp_ingress_port)
         elif ingress_type == IngressTypes.KAFKA:
             self.kafka_url = kafka_url
-            self.kafka_producer = None
-            self.kafka_producer_task = asyncio.get_event_loop().create_task(self.start_kafka_producer())
-            logging.info(f'KAFKA INITIALIZED')
+            self.sync_kafka_producer: Producer = Producer({'bootstrap.servers': f'{self.kafka_url}'})
 
     @staticmethod
     def get_modules(stateflow_graph: StateflowGraph):
@@ -71,7 +71,8 @@ class Universalis:
         modules = self.get_modules(stateflow_graph)
         system_module_name = __name__.split('.')[0]
         for module in modules:
-            if not module.__name__.startswith(system_module_name) and not module.__name__.startswith("stateflow"):  # exclude system modules
+            # exclude system modules
+            if not module.__name__.startswith(system_module_name) and not module.__name__.startswith("stateflow"):
                 cloudpickle.register_pickle_by_value(module)
         if external_modules is not None:
             for external_module in external_modules:
@@ -106,7 +107,35 @@ class Universalis:
                                operator: BaseOperator,
                                key,
                                function: Type | str,
-                               params: tuple):
+                               params: tuple,
+                               serializer: Serializer = Serializer.MSGPACK):
+        request_id, serialized_value, partition = self.prepare_kafka_message(key, operator, function, params,
+                                                                             serializer)
+        msg = await self.kafka_producer.send_and_wait(topic=operator.name,
+                                                      key=request_id,
+                                                      value=serialized_value,
+                                                      partition=partition)
+        return request_id, msg.timestamp
+
+    def send_kafka_event_no_wait(self,
+                                 operator: BaseOperator,
+                                 key,
+                                 function: Type | str,
+                                 params: tuple,
+                                 serializer: Serializer = Serializer.MSGPACK):
+        request_id, serialized_value, partition = self.prepare_kafka_message(key,
+                                                                             operator,
+                                                                             function,
+                                                                             params,
+                                                                             serializer)
+        self.sync_kafka_producer.produce(topic=operator.name,
+                                         value=serialized_value,
+                                         key=msgpack_serialization(request_id),
+                                         partition=partition)
+        timestamp = time.time_ns() // 1_000_000
+        return request_id, timestamp
+
+    def prepare_kafka_message(self, key, operator, function, params, serializer):
         partition: int = make_key_hashable(key) % operator.n_partitions
         fun_name: str = function if isinstance(function, str) else function.__name__
         event = {'__OP_NAME__': operator.name,
@@ -115,18 +144,13 @@ class Universalis:
                  '__PARAMS__': params,
                  '__PARTITION__': partition}
         request_id = uuid.uuid1().int >> 64
-        msg = await self.kafka_producer.send_and_wait(operator.name,
-                                                      key=request_id,
-                                                      value=event,
-                                                      partition=partition)
-        return request_id, msg.timestamp
+        serialized_value: bytes = self.networking_manager.encode_message({"__COM_TYPE__": 'RUN_FUN', "__MSG__": event},
+                                                                         serializer=serializer)
+        return request_id, serialized_value, partition
 
     async def start_kafka_producer(self):
         self.kafka_producer = AIOKafkaProducer(bootstrap_servers=[self.kafka_url],
                                                key_serializer=msgpack_serialization,
-                                               value_serializer=lambda event: self.networking_manager.encode_message(
-                                                   {"__COM_TYPE__": 'RUN_FUN', "__MSG__": event},
-                                                   serializer=Serializer.MSGPACK),
                                                enable_idempotence=True)
         while True:
             try:
@@ -143,6 +167,9 @@ class Universalis:
                                                    self.coordinator_port,
                                                    {"__COM_TYPE__": 'SEND_EXECUTION_GRAPH',
                                                     "__MSG__": stateflow_graph})
+
+    async def start(self):
+        await self.start_kafka_producer()
 
     async def close(self):
         await self.kafka_producer.stop()
