@@ -21,3 +21,24 @@ services:
       - KAFKA_URL=kafka1:9092
       - DISCOVERY_HOST=coordinator
       - DISCOVERY_PORT=8888
+
+  frontend:
+    build:
+      context: .
+      dockerfile: stateflow-client/frontend.dockerfile
+    image: dev/universalis-demo-frontend:latest
+    environment:
+      - UNIVERSALIS_HOST=coordinator
+      - UNIVERSALIS_PORT=8888
+      - PYTHONUNBUFFERED=TRUE
+      - KAFKA_URL=kafka1:9092
+      - N_PARTITIONS=6
+      - N_ENTITIES=5000
+      - STARTING_AMOUNT=100
+      - N_TASKS=10000
+      - WORKLOAD=t
+      - RPS=100
+    depends_on:
+      - coordinator
+    ports:
+      - "5000:5000"

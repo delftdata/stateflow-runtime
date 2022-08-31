@@ -1,10 +1,15 @@
 import math
-
+import json
 import pandas as pd
 import numpy as np
 
-input_msgs = pd.read_csv('universalis_client_requests.csv')
-output_msgs = pd.read_csv('output.csv').drop_duplicates(subset=['request_id'])
+with open('output_t_latency_100rps.json', 'r') as f:
+    d = json.load(f)
+inpt = d["in"]
+out = d["out"]
+
+input_msgs = pd.DataFrame.from_dict(inpt)
+output_msgs = pd.DataFrame.from_dict(out).drop_duplicates(subset=['request_id'])
 
 joined = pd.merge(input_msgs, output_msgs, on='request_id', how='outer')
 runtime = joined['timestamp_y'] - joined['timestamp_x']

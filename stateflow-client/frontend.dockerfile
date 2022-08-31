@@ -5,7 +5,7 @@ RUN groupadd universalis \
 
 USER universalis
 
-COPY --chown=universalis:universalis demo/requirements.txt /var/local/universalis/
+COPY --chown=universalis:universalis stateflow-client/requirements.txt /var/local/universalis/
 COPY --chown=universalis:universalis universalis-package /var/local/universalis-package/
 
 ENV PATH="/usr/local/universalis/.local/bin:${PATH}"
@@ -20,7 +20,7 @@ RUN pip install --user pytest
 
 WORKDIR /usr/local/universalis
 
-COPY --chown=universalis:universalis demo .
+COPY --chown=universalis:universalis stateflow-client .
 
 ENV PYTHONPATH /usr/local/universalis
 

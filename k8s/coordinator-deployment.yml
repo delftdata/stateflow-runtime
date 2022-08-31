@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: universalis-coordinator-cluster-ip-service
+spec:
+  type: NodePort
+  selector:
+    component: coordinator
+  ports:
+    - port: 8888
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coordinator-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      component: coordinator
+  template:
+    metadata:
+      labels:
+        component: coordinator
+    spec:
+      containers:
+        - name: coordinator
+          image: kpsarakis/universalis-coordinator:latest
+          resources:
+            limits:
+              memory: "1000Mi"
+              cpu: "1"
+            requests:
+              memory: "1000Mi"
+              cpu: "1"
+          ports:
+            - containerPort: 8888
+          env:
+            - name: KAFKA_URL
+              value: "kafka:9092"
