@@ -26,7 +26,7 @@ services:
     build:
       context: .
       dockerfile: stateflow-client/frontend.dockerfile
-    image: dev/universalis-demo-frontend:latest
+    image: kpsarakis/universalis-demo-frontend:latest
     environment:
       - UNIVERSALIS_HOST=coordinator
       - UNIVERSALIS_PORT=8888
@@ -35,9 +35,7 @@ services:
       - N_PARTITIONS=6
       - N_ENTITIES=5000
       - STARTING_AMOUNT=100
-      - N_TASKS=10000
-      - WORKLOAD=t
-      - RPS=100
+      - SANIC_RESPONSE_TIMEOUT=6000
     depends_on:
       - coordinator
     ports:

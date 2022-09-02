@@ -1,7 +1,6 @@
 import asyncio
 import os
 import random
-import time
 import pandas as pd
 
 from sanic import Sanic
@@ -27,9 +26,6 @@ N_PARTITIONS: int = int(os.environ['N_PARTITIONS'])
 N_ENTITIES = int(os.environ['N_ENTITIES'])
 keys: list[int] = list(range(N_ENTITIES))
 STARTING_AMOUNT = int(os.environ['STARTING_AMOUNT'])
-N_TASKS = int(os.environ['N_TASKS'])
-WORKLOAD = os.environ['WORKLOAD']
-RPS = int(os.environ['RPS'])
 
 
 entities = {}
@@ -43,15 +39,11 @@ async def hello(_):
 @app.post('/submit_dataflow_graph')
 async def submit_dataflow_graph(_):
     print("INIT STARTING")
-    app.ctx.universalis = Universalis(UNIVERSALIS_HOST, UNIVERSALIS_PORT, IngressTypes.KAFKA,
-                                              kafka_url=KAFKA_URL)
+    app.ctx.universalis = Universalis(UNIVERSALIS_HOST, UNIVERSALIS_PORT, IngressTypes.KAFKA, kafka_url=KAFKA_URL)
 
     app.ctx.flow = stateflow.init()
 
-    app.ctx.runtime = UniversalisRuntime(app.ctx.flow,
-                                                 app.ctx.universalis,
-                                                 "Stateflow",
-                                                 n_partitions=N_PARTITIONS)
+    app.ctx.runtime = UniversalisRuntime(app.ctx.flow, app.ctx.universalis, "Stateflow", n_partitions=N_PARTITIONS)
     print("INIT DONE")
     universalis_operators = await app.ctx.runtime.run((demo_ycsb,))
     app.ctx.client = UniversalisClient(flow=app.ctx.flow,
@@ -70,8 +62,8 @@ async def init_entities(_):
     return json('Entities initialized', status=200)
 
 
-@app.post('/start_benchmark')
-async def start_benchmark(_):
+@app.post('/start_benchmark/<n_tasks:int>/<rps:int>/<workload:str>/<zipf:int>')
+async def start_benchmark(_, n_tasks: int, rps: int, workload: str, zipf: int):
     app.ctx.client.start_result_consumer_process()
     zipf_gen = ZipfGenerator(items=N_ENTITIES)
     operations = ["r", "u", "t"]
@@ -80,29 +72,41 @@ async def start_benchmark(_):
     operation_mix_t = [0.0, 0.0, 1.0]
     operation_mix_r = [1.0, 0.0, 0.0]
     operation_mix_w = [0.0, 1.0, 0.0]
-    if WORKLOAD == 'a':
+    operation_mix_m = [0.4, 0.4, 0.2]
+    if workload == 'a':
         operation_mix = operation_mix_a
-    elif WORKLOAD == 'b':
+    elif workload == 'b':
         operation_mix = operation_mix_b
-    elif WORKLOAD == 'r':
+    elif workload == 'r':
         operation_mix = operation_mix_r
-    elif WORKLOAD == 'w':
+    elif workload == 'w':
         operation_mix = operation_mix_w
+    elif workload == 'm':
+        operation_mix = operation_mix_m
     else:
         operation_mix = operation_mix_t
     await asyncio.sleep(10)
-    sleep_time = (1000 / RPS) // 1000  # sec
-    for _ in range(N_TASKS):
-        key = keys[next(zipf_gen)]
+    sleep_time = (1000 / rps) / 1000  # sec
+    for _ in range(n_tasks):
+        if zipf == 1:
+            key = keys[next(zipf_gen)]
+        else:
+            key = random.choice(keys)
         op = random.choices(operations, weights=operation_mix, k=1)[0]
         if op == "r":
             entities[key].read()
         elif op == "u":
             entities[key].update(STARTING_AMOUNT)
         else:
-            key2 = keys[next(zipf_gen)]
-            while key2 == key:
+            if zipf == 1:
                 key2 = keys[next(zipf_gen)]
+            else:
+                key2 = random.choice(keys)
+            while key2 == key:
+                if zipf == 1:
+                    key2 = keys[next(zipf_gen)]
+                else:
+                    key2 = random.choice(keys)
             entities[key].transfer(1, entities[key2])
         await asyncio.sleep(sleep_time)
     app.ctx.client.store_request_csv()

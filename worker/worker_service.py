@@ -227,31 +227,31 @@ class Worker:
                     await asyncio.gather(*run_function_tasks)
                     # Wait for chains to finish
                     end_proc_time = timer()
-                    logging.info(f'Functions finished in: {round((end_proc_time - epoch_start)*1000, 4)}ms')
-                    logging.info(f'Waiting on chained functions...')
+                    logging.warning(f'Functions finished in: {round((end_proc_time - epoch_start)*1000, 4)}ms')
+                    logging.warning(f'Waiting on chained functions...')
                     chain_acks = [ack.wait()
                                   for ack in self.networking.waited_ack_events.values()]
                     await asyncio.gather(*chain_acks)
                     chain_done_time = timer()
-                    logging.info(f'Chain proc finished in: {round((chain_done_time - end_proc_time) * 1000, 4)}ms')
+                    logging.warning(f'Chain proc finished in: {round((chain_done_time - end_proc_time) * 1000, 4)}ms')
                     # Check for local state conflicts
-                    logging.info(f'Checking conflicts...')
+                    logging.warning(f'Checking conflicts...')
                     if DETERMINISTIC_REORDERING:
                         aborted: set[int] = self.local_state.check_conflicts_deterministic_reordering()
                     else:
                         aborted: set[int] = self.local_state.check_conflicts()
                     checking_conflicts_time = timer()
-                    logging.info(f'Checking conflicts in: '
+                    logging.warning(f'Checking conflicts in: '
                                  f'{round((checking_conflicts_time - chain_done_time) * 1000, 4)}ms')
                     # Notify peers that we are ready to commit
-                    logging.info(f'Notify peers...')
+                    logging.warning(f'Notify peers...')
                     commit_start = timer()
 
                     await self.send_commit_to_peers(aborted, len(sequence))
                     # Wait for remote to be ready to commit
                     wait_remote_commits_task = [event.wait()
                                                 for event in self.ready_to_commit_events.values()]
-                    logging.info(f'Waiting on remote commits...')
+                    logging.warning(f'Waiting on remote commits...')
                     await asyncio.gather(*wait_remote_commits_task)
                     # Gather the different abort messages (application logic, concurrency)
                     remote_aborted: set[int] = set(
@@ -262,7 +262,7 @@ class Worker:
                     )
                     logic_aborts_everywhere = logic_aborts_everywhere.union(self.logic_aborts)
                     # Commit the local while taking into account the aborts from remote
-                    logging.info(f'Sequence committed!')
+                    logging.warning(f'Sequence committed!')
                     await self.local_state.commit(remote_aborted.union(logic_aborts_everywhere))
                     aborts_for_next_epoch: set[int] = aborted.union(remote_aborted)
                     await self.send_responses(aborts_for_next_epoch, logic_aborts_everywhere)
@@ -306,7 +306,7 @@ class Worker:
         # Wait for remote to be ready to commit
         wait_remote_commits_task = [event.wait()
                                     for event in self.ready_to_commit_events.values()]
-        logging.info(f'Waiting on remote commits...')
+        logging.warning(f'Waiting on remote commits...')
         await asyncio.gather(*wait_remote_commits_task)
         logic_aborts_everywhere: set[int] = set(
             itertools.chain.from_iterable(self.logic_aborts_from_remote.values())
@@ -562,6 +562,7 @@ class Worker:
         logging.info(f"Worker id: {self.id}")
 
     async def send_commit_to_peers(self, aborted: set[int], processed_seq_size: int):
+        logging.warning("SENDING COMMIT")
         for worker_id, url in self.peers.items():
             await asyncio.ensure_future((self.networking.send_message(url[0], url[1],
                                                                       {"__COM_TYPE__": 'CMT',

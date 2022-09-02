@@ -14,7 +14,7 @@ kind: Deployment
 metadata:
   name: worker-deployment
 spec:
-  replicas: 1
+  replicas: 6
   selector:
     matchLabels:
       component: worker
@@ -28,11 +28,11 @@ spec:
           image: kpsarakis/universalis-worker:latest
           resources:
             limits:
-              memory: "500Mi"
-              cpu: "0.5"
+              memory: "1000Mi"
+              cpu: "1"
             requests:
-              memory: "500Mi"
-              cpu: "0.5"
+              memory: "1000Mi"
+              cpu: "1"
           ports:
             - containerPort: 8888
           env:

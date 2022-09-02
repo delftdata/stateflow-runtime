@@ -3,7 +3,7 @@ import json
 import pandas as pd
 import numpy as np
 
-with open('output_t_latency_100rps.json', 'r') as f:
+with open('output_un_t.json', 'r') as f:
     d = json.load(f)
 inpt = d["in"]
 out = d["out"]
