@@ -1,93 +1,176 @@
 import asyncio
+import dataclasses
+import fractions
 import struct
+import socket
 
 import zmq
 from aiozmq import create_zmq_stream, ZmqStream
 
 from .logging import logging
 from .serialization import Serializer, msgpack_serialization, msgpack_deserialization, \
-    cloudpickle_serialization, cloudpickle_deserialization
+    cloudpickle_serialization, cloudpickle_deserialization, pickle_serialization, pickle_deserialization
+
+
+@dataclasses.dataclass
+class SocketConnection:
+    zmq_socket: ZmqStream
+    socket_lock: asyncio.Lock
+
+
+class SocketPool:
+
+    def __init__(self, host: str, port: int, size: int = 4):
+        self.host = host
+        self.port = port
+        self.size = size
+        self.conns: list[SocketConnection] = []
+        self.index: int = 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self) -> SocketConnection:
+        conn = self.conns[self.index]
+        next_idx = self.index + 1
+        self.index = 0 if next_idx == self.size else next_idx
+        return conn
+
+    async def create_socket_connections(self):
+        for _ in range(self.size):
+            soc = await create_zmq_stream(zmq.DEALER, connect=f"tcp://{self.host}:{self.port}")
+            self.conns.append(SocketConnection(soc, asyncio.Lock()))
+
+    def close(self):
+        for conn in self.conns:
+            conn.zmq_socket.close()
+            conn.socket_lock.release()
+        self.conns = []
 
 
 class NetworkingManager:
 
     def __init__(self):
-        self.conns: dict[tuple[str, int, str, str], ZmqStream] = {}  # HERE BETTER TO ADD A CONNECTION POOL
-        self.locks: dict[tuple[str, int, str, str], asyncio.Lock] = {}
+        self.pools: dict[tuple[str, int], SocketPool] = {}  # HERE BETTER TO ADD A CONNECTION POOL
+        self.get_socket_lock = asyncio.Lock()
+        self.host_name: str = str(socket.gethostbyname(socket.gethostname()))
+        self.waited_ack_events: dict[int, asyncio.Event] = {}  # event_id: ack_event
+        self.ack_fraction: dict[int, fractions.Fraction] = {}
+        self.waited_ack_events_lock: asyncio.Lock = asyncio.Lock()
+        self.aborted_events: set[int] = set()
+
+    def cleanup_after_epoch(self):
+        self.waited_ack_events = {}
+        self.ack_fraction = {}
+        self.aborted_events = set()
+
+    async def add_ack_fraction_str(self, ack_id: int, fraction_str: str):
+        async with self.waited_ack_events_lock:
+            self.ack_fraction[ack_id] += fractions.Fraction(fraction_str)
+            logging.info(f'Ack fraction {fraction_str} received for: {ack_id} new value {self.ack_fraction[ack_id]}')
+            if self.ack_fraction[ack_id] == 1:
+                # All ACK parts have been gathered
+                logging.info(f'All acks have been gathered for ack_id: {ack_id} {self.ack_fraction[ack_id]}')
+                self.waited_ack_events[ack_id].set()
 
     def close_all_connections(self):
-        for stream in self.conns.values():
-            stream.close()
-        for lock in self.locks.values():
-            lock.release()
-        self.conns: dict[tuple[str, int, str, str], ZmqStream] = {}
-        self.locks: dict[tuple[str, int, str, str], asyncio.Lock] = {}
+        for pool in self.pools.values():
+            pool.close()
 
-    async def create_socket_connection(self, host: str, port, operator_name: str, function_name: str):
-        self.locks[(host, port, operator_name, function_name)] = asyncio.Lock()
-        self.conns[(host, port, operator_name, function_name)] = await create_zmq_stream(zmq.DEALER,
-                                                                                         connect=f"tcp://{host}:{port}")
+    async def create_socket_connection(self, host: str, port):
+        self.pools[(host, port)] = SocketPool(host, port)
+        await self.pools[(host, port)].create_socket_connections()
 
-    def close_socket_connection(self, host: str, port, operator_name: str, function_name: str):
-        if (host, port, operator_name, function_name) in self.conns:
-            self.conns[(host, port, operator_name, function_name)].close()
-            del self.conns[(host, port, operator_name, function_name)]
-            self.locks[(host, port, operator_name, function_name)].release()
-            del self.locks[(host, port, operator_name, function_name)]
+    def close_socket_connection(self, host: str, port):
+        if (host, port) in self.pools:
+            self.pools[(host, port)].close()
         else:
             logging.warning('The socket that you are trying to close does not exist')
 
     async def send_message(self,
                            host,
                            port,
-                           operator_name,
-                           function_name,
-                           msg: object,
+                           msg: dict[str, object],
                            serializer: Serializer = Serializer.CLOUDPICKLE):
-
-        if (host, port, operator_name, function_name) not in self.conns:
-            await self.create_socket_connection(host, port, operator_name, function_name)
+        async with self.get_socket_lock:
+            if (host, port) not in self.pools:
+                await self.create_socket_connection(host, port)
+            socket_conn = next(self.pools[(host, port)])
         msg = self.encode_message(msg, serializer)
-        self.conns[(host, port, operator_name, function_name)].write((msg, ))
+        socket_conn.zmq_socket.write((msg, ))
 
-    async def __receive_message(self, host, port, operator_name, function_name):
+    async def prepare_function_chain(self, ack_share: str, t_id: int) -> tuple[str, int, str]:
+        async with self.waited_ack_events_lock:
+            ack_payload = (self.host_name, t_id, ack_share)
+            self.waited_ack_events[t_id] = asyncio.Event()
+            self.ack_fraction[t_id] = fractions.Fraction(0)
+        return ack_payload
+
+    async def reset_ack_for_fallback(self):
+        async with self.waited_ack_events_lock:
+            self.aborted_events = set()
+            [event.clear() for event in self.waited_ack_events.values()]
+            self.ack_fraction = {t_id: fractions.Fraction(0) for t_id in self.ack_fraction.keys()}
+
+    async def abort_chain(self, aborted_t_id: int):
+        async with self.waited_ack_events_lock:
+            self.waited_ack_events[aborted_t_id].set()
+            self.aborted_events.add(aborted_t_id)
+
+    async def send_message_ack(self,
+                               host,
+                               port,
+                               ack_payload: [str, int, str],
+                               msg: dict[str, object],
+                               serializer: Serializer = Serializer.CLOUDPICKLE):
+        msg["__ACK__"] = ack_payload
+        await self.send_message(host, port, msg, serializer=serializer)
+
+    async def __receive_message(self, sock):
         # To be used only by the request response because the lock is needed
-        answer = await self.conns[(host, port, operator_name, function_name)].read()
+        answer = await sock.read()
         return self.decode_message(answer[0])
 
     async def send_message_request_response(self,
                                             host,
                                             port,
-                                            operator_name,
-                                            function_name,
-                                            msg: object,
+                                            msg: dict[str, object],
                                             serializer: Serializer = Serializer.CLOUDPICKLE):
-
-        if (host, port, operator_name, function_name) not in self.conns:
-            await self.create_socket_connection(host, port, operator_name, function_name)
-        async with self.locks[(host, port, operator_name, function_name)]:
-            await self.send_message(host, port, operator_name, function_name, msg, serializer)
-            resp = await self.__receive_message(host, port, operator_name, function_name)
+        async with self.get_socket_lock:
+            if (host, port) not in self.pools:
+                await self.create_socket_connection(host, port)
+            socket_conn = next(self.pools[(host, port)])
+        async with socket_conn.socket_lock:
+            await self.__send_message_given_sock(socket_conn.zmq_socket, msg, serializer)
+            resp = await self.__receive_message(socket_conn.zmq_socket)
             logging.info("NETWORKING MODULE RECEIVED RESPONSE")
             return resp
 
+    async def __send_message_given_sock(self, sock, msg, serializer):
+        msg = self.encode_message(msg, serializer)
+        sock.write((msg, ))
+
     @staticmethod
     def encode_message(msg: object, serializer: Serializer) -> bytes:
-        if serializer == Serializer.CLOUDPICKLE:
-            msg = struct.pack('>H', 0) + cloudpickle_serialization(msg)
-            return msg
-        elif serializer == Serializer.MSGPACK:
-            msg = struct.pack('>H', 1) + msgpack_serialization(msg)
-            return msg
-        else:
-            logging.info(f'Serializer: {serializer} is not supported')
+        match serializer:
+            case Serializer.CLOUDPICKLE:
+                return struct.pack('>H', 0) + cloudpickle_serialization(msg)
+            case Serializer.MSGPACK:
+                return struct.pack('>H', 1) + msgpack_serialization(msg)
+            case Serializer.PICKLE:
+                return struct.pack('>H', 2) + pickle_serialization(msg)
+            case _:
+                logging.error(f'Serializer: {serializer} is not supported')
 
     @staticmethod
     def decode_message(data):
         serializer = struct.unpack('>H', data[0:2])[0]
-        if serializer == 0:
-            return cloudpickle_deserialization(data[2:])
-        elif serializer == 1:
-            return msgpack_deserialization(data[2:])
-        else:
-            logging.info(f'Serializer: {serializer} is not supported')
+        match serializer:
+            case 0:
+                return cloudpickle_deserialization(data[2:])
+            case 1:
+                return msgpack_deserialization(data[2:])
+            case 2:
+                return pickle_deserialization(data[2:])
+            case _:
+                logging.error(f'Serializer: {serializer} is not supported')

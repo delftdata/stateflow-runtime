@@ -1,23 +1,31 @@
-FROM python:3-slim
-
-COPY demo/requirements.txt /var/local/universalis/
-COPY universalis-package /var/local/universalis-package/
+FROM python:3.10-slim
 
 RUN groupadd universalis \
     && useradd -m -d /usr/local/universalis -g universalis universalis
 
+USER universalis
+
+COPY --chown=universalis:universalis demo/requirements.txt /var/local/universalis/
+COPY --chown=universalis:universalis universalis-package /var/local/universalis-package/
+
+ENV PATH="/usr/local/universalis/.local/bin:${PATH}"
+
 RUN pip install --upgrade pip \
-    && pip install --prefix=/usr/local -r /var/local/universalis/requirements.txt \
-    && pip install --prefix=/usr/local ./var/local/universalis-package/
+    && pip install --user -r /var/local/universalis/requirements.txt \
+    && pip install --user ./var/local/universalis-package/
 
-WORKDIR /usr/local/universalis/demo
+COPY --chown=universalis:universalis stateful_dataflows.tgz /var/local/universalis/
+RUN pip install --user /var/local/universalis/stateful_dataflows.tgz
+RUN pip install --user pytest
 
-COPY --chown=universalis demo .
+WORKDIR /usr/local/universalis
+
+COPY --chown=universalis:universalis demo .
 
 ENV PYTHONPATH /usr/local/universalis
 
 USER universalis
-CMD ["hypercorn", "-b", "0.0.0.0:5000", "app:app", "-w", "1"]
+CMD ["sanic", "app.app", "--host=0.0.0.0", "--port=5000"]
 
-# default flask port
+# default port
 EXPOSE 5000

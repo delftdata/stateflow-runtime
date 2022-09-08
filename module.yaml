@@ -1,0 +1,52 @@
+version: '3.0'
+module:
+  meta:
+    type: remote
+  spec:
+    egresses:
+    - egress:
+        meta:
+          id: stateflow/kafka-egress
+          type: io.statefun.kafka/egress
+        spec:
+          address: kafka1:9092
+    endpoints:
+    - endpoint:
+        meta:
+          kind: http
+        spec:
+          functions: globals/ping
+          urlPathTemplate: http://functions:80/statefun
+    - endpoint:
+        meta:
+          kind: http
+        spec:
+          functions: global/YCSBEntity
+          urlPathTemplate: http://functions:80/statefun
+    - endpoint:
+        meta:
+          kind: http
+        spec:
+          functions: global/YCSBEntity_create
+          urlPathTemplate: http://functions:80/statefun
+    ingresses:
+    - ingress:
+        meta:
+          id: stateflow/kafka-ingress
+          type: io.statefun.kafka/ingress
+        spec:
+          address: kafka1:9092
+          consumerGroupId: stateflow-statefun-consumer
+          topics:
+          - targets:
+            - global/YCSBEntity
+            topic: global_YCSBEntity
+            valueType: stateflow/byte_type
+          - targets:
+            - global/YCSBEntity_create
+            topic: global_YCSBEntity_create
+            valueType: stateflow/byte_type
+          - targets:
+            - globals/ping
+            topic: globals_ping
+            valueType: stateflow/byte_type

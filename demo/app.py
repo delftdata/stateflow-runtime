@@ -1,9 +1,8 @@
-import asyncio
 import os
-import time
 import uuid
 
-from quart import Quart, jsonify, Response
+from sanic import Sanic
+from sanic.response import json
 
 from universalis.common.operator import Operator
 from universalis.common.stateflow_graph import StateflowGraph
@@ -13,114 +12,109 @@ from demo.functions import order, stock, user
 from universalis.universalis import Universalis
 from universalis.common.local_state_backends import LocalStateBackend
 
-app = Quart(__name__)
+app = Sanic(__name__)
 
 UNIVERSALIS_HOST: str = os.environ['UNIVERSALIS_HOST']
 UNIVERSALIS_PORT: int = int(os.environ['UNIVERSALIS_PORT'])
 
-# universalis = Universalis(UNIVERSALIS_HOST, UNIVERSALIS_PORT, IngressTypes.TCP,
-#                           tcp_ingress_host='ingress-load-balancer', tcp_ingress_port=4000)
-universalis = Universalis(UNIVERSALIS_HOST, UNIVERSALIS_PORT, IngressTypes.KAFKA,
-                          kafka_url='kafka1:9092')
-####################################################################################################################
-# DECLARE A STATEFLOW GRAPH ########################################################################################
-####################################################################################################################
-g = StateflowGraph('shopping-cart')
-####################################################################################################################
 
-user_operator = Operator('user', n_partitions=3, operator_state_backend=LocalStateBackend.REDIS)
-user_operator.register_stateful_functions(user.CreateUser(), user.AddCredit(), user.SubtractCredit())
-g.add_operator(user_operator)
-####################################################################################################################
+@app.after_server_start
+async def init_universalis_client(running_app):
+    # universalis = Universalis(UNIVERSALIS_HOST, UNIVERSALIS_PORT, IngressTypes.TCP,
+    #                           tcp_ingress_host='ingress-load-balancer', tcp_ingress_port=4000)
+    running_app.ctx.universalis = Universalis(UNIVERSALIS_HOST, UNIVERSALIS_PORT, IngressTypes.KAFKA,
+                                              kafka_url='kafka1:9092')
 
-stock_operator = Operator('stock', n_partitions=3, operator_state_backend=LocalStateBackend.REDIS)
-stock_operator.register_stateful_functions(stock.CreateItem(), stock.AddStock(), stock.SubtractStock())
-g.add_operator(stock_operator)
-####################################################################################################################
+    running_app.ctx.user_operator = Operator('user', n_partitions=6)
+    running_app.ctx.stock_operator = Operator('stock', n_partitions=6)
+    running_app.ctx.order_operator = Operator('order', n_partitions=6)
 
-order_operator = Operator('order', n_partitions=3, operator_state_backend=LocalStateBackend.REDIS)
-order_operator.register_stateful_functions(order.CreateOrder(), order.AddItem(), order.Checkout())
-g.add_operator(order_operator)
-####################################################################################################################
 
-g.add_connection(order_operator, user_operator, bidirectional=True)
-g.add_connection(order_operator, stock_operator, bidirectional=True)
-####################################################################################################################
-# SUBMIT STATEFLOW GRAPH ###########################################################################################
-####################################################################################################################
-
-time.sleep(3)
-
-asyncio.run(universalis.submit(g, user, order, stock))
+@app.post('/submit_dataflow_graph')
+async def submit_dataflow_graph(_):
+    ####################################################################################################################
+    # DECLARE A STATEFLOW GRAPH ########################################################################################
+    ####################################################################################################################
+    g = StateflowGraph('shopping-cart', operator_state_backend=LocalStateBackend.REDIS)
+    ####################################################################################################################
+    app.ctx.user_operator.register_stateful_functions(user.CreateUser, user.AddCredit, user.SubtractCredit)
+    g.add_operator(app.ctx.user_operator)
+    ####################################################################################################################
+    app.ctx.stock_operator.register_stateful_functions(stock.CreateItem, stock.AddStock, stock.SubtractStock)
+    g.add_operator(app.ctx.stock_operator)
+    ####################################################################################################################
+    app.ctx.order_operator.register_stateful_functions(order.CreateOrder, order.AddItem, order.Checkout)
+    g.add_operator(app.ctx.order_operator)
+    ####################################################################################################################
+    g.add_connection(app.ctx.order_operator, app.ctx.user_operator, bidirectional=True)
+    g.add_connection(app.ctx.order_operator, app.ctx.stock_operator, bidirectional=True)
+    ####################################################################################################################
+    # SUBMIT STATEFLOW GRAPH ###########################################################################################
+    ####################################################################################################################
+    await app.ctx.universalis.submit(g, user, order, stock)
+    return json('Graph submitted', status=200)
 
 
 @app.post('/user/create')
-async def create_user():
-    print('/user/create')
+async def create_user(_):
     user_key: str = str(uuid.uuid4())
     user_name: str = f'user-{user_key}'
     # await universalis.send_tcp_event(operator=user_operator,
     #                                  key=user_key,
     #                                  function=user.CreateUser(),
     #                                  params=(user_key, user_name))
-    await universalis.send_kafka_event(operator=user_operator,
-                                       key=user_key,
-                                       function=user.CreateUser(),
-                                       params=(user_key, user_name))
-    return jsonify({'user_key': user_key})
+    await app.ctx.universalis.send_kafka_event(operator=app.ctx.user_operator,
+                                               key=user_key,
+                                               function=user.CreateUser,
+                                               params=(user_key, user_name))
+    return json({'user_key': user_key})
 
 
 @app.post('/user/add_credit/<user_key>/<amount>')
-async def add_credit(user_key: str, amount: int):
-    print('/user/add_credit/<user_key>/<amount>')
+async def add_credit(_, user_key: str, amount: int):
     # await universalis.send_tcp_event(user_operator, user_key, user.AddCredit(), (user_key, int(amount)))
-    await universalis.send_kafka_event(user_operator, user_key, user.AddCredit(), (user_key, int(amount)))
-    return Response('Credit added', status=200)
+    await app.ctx.universalis.send_kafka_event(app.ctx.user_operator, user_key, user.AddCredit, (user_key, int(amount)))
+    return json('Credit added', status=200)
 
 
 @app.post('/stock/create')
-async def create_item():
-    print('/stock/create')
+async def create_item(_):
     item_key: str = str(uuid.uuid4())
     item_name: str = f'item-{item_key}'
     price: int = 1
     # await universalis.send_tcp_event(stock_operator, item_key, stock.CreateItem(), (item_key, item_name, price))
-    await universalis.send_kafka_event(stock_operator, item_key, stock.CreateItem(), (item_key, item_name, price))
-    return jsonify({'item_key': item_key})
+    await app.ctx.universalis.send_kafka_event(app.ctx.stock_operator, item_key, stock.CreateItem, (item_key, item_name, price))
+    return json({'item_key': item_key})
 
 
 @app.post('/stock/add_stock/<item_key>/<amount>')
-async def add_stock(item_key: str, amount: int):
-    print('/stock/add_stock/<item_key>/<amount>')
+async def add_stock(_, item_key: str, amount: int):
     # await universalis.send_tcp_event(stock_operator, item_key, stock.AddStock(), (item_key, int(amount)))
-    await universalis.send_kafka_event(stock_operator, item_key, stock.AddStock(), (item_key, int(amount)))
-    return jsonify({'item_key': item_key})
+    await app.ctx.universalis.send_kafka_event(app.ctx.stock_operator, item_key, stock.AddStock, (item_key, int(amount)))
+    return json({'item_key': item_key})
 
 
 @app.post('/order/create_order/<user_key>')
-async def create_order(user_key: str):
-    print('/order/create_order/<user_key>')
+async def create_order(_, user_key: str):
     order_key: str = str(uuid.uuid4())
     # await universalis.send_tcp_event(order_operator, order_key, order.CreateOrder(), (order_key, user_key))
-    await universalis.send_kafka_event(order_operator, order_key, order.CreateOrder(), (order_key, user_key))
-    return jsonify({'order_key': order_key})
+    await app.ctx.universalis.send_kafka_event(app.ctx.order_operator, order_key, order.CreateOrder, (order_key, user_key))
+    return json({'order_key': order_key})
 
 
 @app.post('/order/add_item/<order_key>/<item_key>')
-async def add_item(order_key: str, item_key: str):
-    print('/order/add_item/<order_key>/<item_key>')
+async def add_item(_, order_key: str, item_key: str):
     quantity, cost = 1, 1
     # await universalis.send_tcp_event(order_operator, order_key, order.AddItem(), (order_key, item_key, quantity, cost))
-    await universalis.send_kafka_event(order_operator, order_key, order.AddItem(), (order_key, item_key, quantity, cost))
-    return Response('Item added', status=200)
+    await app.ctx.universalis.send_kafka_event(app.ctx.order_operator, order_key, order.AddItem, (order_key, item_key, quantity, cost))
+    return json('Item added', status=200)
 
 
 @app.post('/order/checkout/<order_key>')
-async def checkout_order(order_key: str):
-    print('/order/checkout/<order_key>')
+async def checkout_order(_, order_key: str):
     # await universalis.send_tcp_event(order_operator, order_key, order.Checkout(), (order_key,))
-    await universalis.send_kafka_event(order_operator, order_key, order.Checkout(), (order_key,))
-    return Response('Checkout started', status=200)
+    await app.ctx.universalis.send_kafka_event(app.ctx.order_operator, order_key, order.Checkout, (order_key,))
+    return json('Checkout started', status=200)
 
 
 if __name__ == '__main__':

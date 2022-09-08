@@ -6,7 +6,6 @@ from kafka.admin import NewTopic
 from kafka.errors import NoBrokersAvailable, NodeNotReadyError, TopicAlreadyExistsError
 
 from universalis.common.stateflow_graph import StateflowGraph
-from universalis.common.stateflow_worker import StateflowWorker
 from universalis.common.stateflow_ingress import IngressTypes
 from universalis.common.logging import logging
 
@@ -19,23 +18,27 @@ class NotAStateflowGraph(Exception):
 
 class Coordinator:
 
-    def __init__(self):
-        self.workers = []
+    def __init__(self, server_port: int):
+        self.worker_counter: int = 0
+        self.workers: dict[int, tuple[str, int]] = {}
+        self.server_port = server_port
 
     def register_worker(self, worker_ip: str):
-        self.workers.append(StateflowWorker(worker_ip, 8888))
+        self.worker_counter += 1
+        self.workers[self.worker_counter] = (worker_ip, self.server_port)
+        return self.worker_counter
 
     async def submit_stateflow_graph(self,
                                      network_manager,
                                      stateflow_graph: StateflowGraph,
                                      ingress_type: IngressTypes = IngressTypes.KAFKA,
-                                     scheduler_type=None) -> dict[str, dict[str, tuple[str, int]]]:
+                                     scheduler_type=None):
         if not isinstance(stateflow_graph, StateflowGraph):
             raise NotAStateflowGraph
         scheduler = RoundRobin()
         if ingress_type == IngressTypes.KAFKA:
             self.create_kafka_ingress_topics(stateflow_graph)
-        return await scheduler.schedule(self.workers, stateflow_graph, network_manager)
+        await scheduler.schedule(self.workers, stateflow_graph, network_manager)
 
     @staticmethod
     def create_kafka_ingress_topics(stateflow_graph: StateflowGraph):
